@@ -86,19 +86,36 @@ class DataGenerator:
             # 使用随机收益：在[min_profit, max_profit]范围内随机生成
             return np.random.uniform(min_profit, max_profit, size=n)
     
-    def generate_costs(self, m: int, min_cost: float = 50.0, max_cost: float = 500.0) -> np.ndarray:
+    def generate_costs(self, m: int, capacities: np.ndarray = None, 
+                       cost_per_capacity: float = 2.0, 
+                       noise_std: float = 0.2) -> np.ndarray:
         """
         生成每个区域的建设成本 c_j
         
+        建设成本与容量上限近似成正比：c_j = cost_per_capacity * U_j + noise
+        其中noise符合正态分布，标准差为cost_per_capacity * U_j * noise_std
+        
         Args:
             m: 区域数量
-            min_cost: 最小成本
-            max_cost: 最大成本
+            capacities: 容量上限数组，如果提供则基于此计算成本
+            cost_per_capacity: 单位容量的成本系数（默认2.0）
+            noise_std: 噪声的标准差系数（相对于基础成本的比例，默认0.2）
             
         Returns:
-            c: 长度为m的成本数组
+            c: 长度为m的成本数组（非负）
         """
-        return np.random.uniform(min_cost, max_cost, size=m)
+        if capacities is not None:
+            # 基于容量上限计算成本
+            base_costs = cost_per_capacity * capacities
+            # 添加正态分布的噪声
+            noise = np.random.normal(0, base_costs * noise_std)
+            costs = base_costs + noise
+            # 确保成本非负
+            costs = np.maximum(costs, base_costs * 0.1)  # 至少为基础成本的10%
+        else:
+            # 如果没有提供容量，使用默认方法（保持向后兼容）
+            costs = np.random.uniform(50.0, 500.0, size=m)
+        return costs
     
     def generate_capacity_limits(self, m: int, min_capacity: int = 20, max_capacity: int = 200) -> np.ndarray:
         """
@@ -124,10 +141,10 @@ class DataGenerator:
         min_profit: float = 1.0,
         max_profit: float = 10.0,
         unified_profit: float = 5.0,  # 默认使用统一收益5.0
-        min_cost: float = 50.0,
-        max_cost: float = 500.0,
         min_capacity: int = 20,
-        max_capacity: int = 200
+        max_capacity: int = 200,
+        cost_per_capacity: float = 2.0,  # 单位容量的成本系数
+        cost_noise_std: float = 0.2  # 成本波动的标准差系数（相对于基础成本）
     ) -> Dict:
         """
         生成完整的问题实例
@@ -141,21 +158,29 @@ class DataGenerator:
             min_profit: 最小单位收益（当unified_profit为None时使用）
             max_profit: 最大单位收益（当unified_profit为None时使用）
             unified_profit: 统一收益值，如果提供则所有楼栋使用相同的单位收益（默认5.0）
-            min_cost: 最小建设成本
-            max_cost: 最大建设成本
             min_capacity: 最小容量上限
             max_capacity: 最大容量上限
+            cost_per_capacity: 单位容量的成本系数，建设成本 ≈ cost_per_capacity * 容量上限
+            cost_noise_std: 成本波动的标准差系数（相对于基础成本的比例），控制波动程度
             
         Returns:
             包含所有问题参数的字典
         """
+        # 先生成容量上限
+        U = self.generate_capacity_limits(m, min_capacity, max_capacity)
+        
+        # 基于容量上限生成建设成本（成正比，但有正态分布的波动）
+        c = self.generate_costs(m, capacities=U, 
+                                cost_per_capacity=cost_per_capacity,
+                                noise_std=cost_noise_std)
+        
         instance = {
             'n': n,  # 楼栋数量
             'm': m,  # 区域数量
             'D': self.generate_demands(n, min_demand, max_demand).tolist(),  # 需求
             'p': self.generate_unit_profits(n, min_profit, max_profit, unified_profit).tolist(),  # 单位收益（统一）
-            'c': self.generate_costs(m, min_cost, max_cost).tolist(),  # 建设成本
-            'U': self.generate_capacity_limits(m, min_capacity, max_capacity).tolist(),  # 容量上限
+            'c': c.tolist(),  # 建设成本（与容量上限近似成正比）
+            'U': U.tolist(),  # 容量上限
             'a': self.generate_coverage_matrix(n, m, coverage_rate).tolist()  # 覆盖关系矩阵
         }
         

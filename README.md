@@ -110,12 +110,13 @@ python main.py --instance instance.json --methods all
    - 生成方式：均匀随机整数
 
 2. **单位收益 $p_i$**: 
-   - 范围：[`min_profit`, `max_profit`]（默认1.0-10.0）
-   - 生成方式：均匀随机浮点数
+   - 默认统一收益 `unified_profit=5.0`（所有楼栋相同）
+   - 如需随机收益，可设置 `unified_profit=None`，范围：[`min_profit`, `max_profit`]
 
 3. **建设成本 $c_j$**: 
-   - 范围：[`min_cost`, `max_cost`]（默认50.0-500.0）
-   - 生成方式：均匀随机浮点数
+   - 与容量上限近似成正比：$c_j = \\text{cost\\_per\\_capacity} \\times U_j \\times (1 + \\mathcal{N}(0, \\sigma))$
+   - 波动服从正态分布，默认系数 `cost_noise_std=0.2`
+   - 默认比例系数 `cost_per_capacity=2.0`
 
 4. **容量上限 $U_j$**: 
    - 范围：[`min_capacity`, `max_capacity`]（默认20-200）
