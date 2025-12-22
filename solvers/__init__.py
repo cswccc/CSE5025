@@ -7,13 +7,11 @@ from .brute_force import BruteForceSolver
 from .greedy import GreedySolver
 from .milp_solver import MILPSolver
 from .genetic_algorithm import GeneticAlgorithmSolver
-from .ant_colony import AntColonySolver
 
 __all__ = [
     'BaseSolver',
     'BruteForceSolver',
     'GreedySolver',
     'MILPSolver',
-    'GeneticAlgorithmSolver',
-    'AntColonySolver'
+    'GeneticAlgorithmSolver'
 ]

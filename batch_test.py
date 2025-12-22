@@ -13,7 +13,6 @@ from solvers import (
     BruteForceSolver,
     GreedySolver,
     MILPSolver,
-    AntColonySolver,
     GeneticAlgorithmSolver
 )
 
@@ -117,35 +116,6 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
         results['brute_force_time'] = None
         results['brute_force_feasible'] = False
     
-    # 蚁群算法
-    if 'ant_colony' in methods:
-        try:
-            print(f"  [{problem_id}] 运行蚁群算法...")
-            solver = AntColonySolver(
-                instance,
-                num_ants=30,  # 增加蚂蚁数量
-                max_iterations=150  # 增加迭代次数以获得更好的结果
-            )
-            start_time = time.time()
-            solution, objective = solver.solve()
-            elapsed_time = time.time() - start_time
-            is_feasible, msg = solver.is_feasible(
-                np.array(solution['z']),
-                np.array(solution['x']),
-                np.array(solution['y'])
-            )
-            results['ant_colony_objective'] = objective
-            results['ant_colony_time'] = elapsed_time
-            results['ant_colony_feasible'] = is_feasible
-            results['ant_colony_z_count'] = sum(solution['z'])
-            results['ant_colony_x_total'] = sum(solution['x'])
-            print(f"  [{problem_id}] 蚁群算法完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
-        except Exception as e:
-            print(f"  [{problem_id}] 蚁群算法失败: {e}")
-            results['ant_colony_objective'] = None
-            results['ant_colony_time'] = None
-            results['ant_colony_feasible'] = False
-    
     # 遗传算法
     if 'genetic' in methods or 'ga' in methods:
         try:
@@ -192,7 +162,7 @@ def save_results_to_csv(results_list: List[Dict], filename: str = 'batch_test_re
     fieldnames = ['problem_id', 'n', 'm', 'seed']
     
     # 添加各方法的字段
-    methods = ['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic']
+    methods = ['greedy', 'milp', 'brute_force', 'genetic']
     for method in methods:
         fieldnames.extend([
             f'{method}_objective',
@@ -267,8 +237,8 @@ def main():
     parser.add_argument('--methods', type=str, nargs='+',
                     #    default=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic'],
                     default=['greedy', 'milp', 'brute_force'],
-                       choices=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic', 'ga', 'all'],
-                       help='要运行的求解方法（默认: greedy milp brute_force ant_colony genetic）')
+                       choices=['greedy', 'milp', 'brute_force', 'genetic', 'ga', 'all'],
+                       help='要运行的求解方法（默认: greedy milp brute_force genetic）')
     parser.add_argument('--output', type=str, default='batch_test_results.csv',
                        help='结果输出CSV文件路径（默认: batch_test_results.csv）')
     
@@ -277,7 +247,7 @@ def main():
     # 处理methods参数
     methods = args.methods
     if 'all' in methods:
-        methods = ['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic']
+        methods = ['greedy', 'milp', 'brute_force', 'genetic']
     # 将'ga'统一为'genetic'
     if 'ga' in methods:
         methods = [m if m != 'ga' else 'genetic' for m in methods]
