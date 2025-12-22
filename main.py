@@ -89,7 +89,8 @@ def main():
         instance = generator.generate_instance(
             n=args.n,
             m=args.m,
-            coverage_rate=0.3
+            coverage_rate=0.3,
+            unified_profit=5.0  # 使用统一收益5.0
         )
         instance_file = args.instance if args.instance else 'instance.json'
         generator.save_instance(instance, instance_file)
