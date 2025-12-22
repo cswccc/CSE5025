@@ -1,5 +1,5 @@
 """
-批量测试脚本：生成50组数据并使用不同方法求解
+批量测试脚本：从指定目录加载数据并使用不同方法求解
 """
 
 import os
@@ -9,7 +9,6 @@ import time
 import argparse
 import numpy as np
 from typing import List, Dict
-from data_generator import DataGenerator
 from solvers import (
     BruteForceSolver,
     GreedySolver,
@@ -17,41 +16,6 @@ from solvers import (
     AntColonySolver,
     GeneticAlgorithmSolver
 )
-
-
-def generate_50_instances():
-    """
-    生成50组数据
-    5组不同的(n, m)组合，每组10个不同的seed
-    """
-    # 5组不同的(n, m)组合
-    problem_sizes = [
-        (10, 5),   # 小规模
-        (15, 8),   # 中小规模
-        (20, 10),  # 中等规模
-        (25, 12),  # 中大规模
-        (30, 15),  # 大规模
-    ]
-    
-    instances = []
-    
-    for idx, (n, m) in enumerate(problem_sizes):
-        print(f"\n生成第 {idx+1} 组: n={n}, m={m}")
-        for seed_offset in range(10):
-            seed = idx * 100 + seed_offset  # 使用不同的seed
-            generator = DataGenerator(seed=seed)
-            instance = generator.generate_instance(
-                n=n,
-                m=m,
-                coverage_rate=0.3,
-                unified_profit=5.0  # 使用统一收益5.0
-            )
-            instance['problem_id'] = f"P{idx+1}_S{seed_offset+1}"
-            instance['seed'] = seed
-            instances.append(instance)
-            print(f"  生成实例 {instance['problem_id']}: seed={seed}")
-    
-    return instances
 
 
 def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
@@ -248,53 +212,64 @@ def save_results_to_csv(results_list: List[Dict], filename: str = 'batch_test_re
     print(f"\n结果已保存到: {filename}")
 
 
-def load_instances_from_dir(instances_dir: str = 'instances') -> List[Dict]:
+def load_instances_from_dir(instances_dir: str) -> List[Dict]:
     """
-    从instances目录加载已存在的实例数据
+    从指定目录加载所有JSON实例文件
     
     Args:
         instances_dir: 实例数据目录路径
     
     Returns:
-        List[Dict]: 实例列表
+        List[Dict]: 实例列表，按文件名排序
     """
+    if not os.path.exists(instances_dir):
+        raise FileNotFoundError(f"目录不存在: {instances_dir}")
+    
     instances = []
-    if os.path.exists(instances_dir):
-        files = sorted([f for f in os.listdir(instances_dir) if f.endswith('.json')])
-        for filename in files:
-            filepath = os.path.join(instances_dir, filename)
-            with open(filepath, 'r', encoding='utf-8') as f:
-                instance = json.load(f)
-                instances.append(instance)
+    files = sorted([f for f in os.listdir(instances_dir) if f.endswith('.json')])
+    
+    if len(files) == 0:
+        raise ValueError(f"目录中没有找到JSON文件: {instances_dir}")
+    
+    for filename in files:
+        filepath = os.path.join(instances_dir, filename)
+        with open(filepath, 'r', encoding='utf-8') as f:
+            instance = json.load(f)
+            instances.append(instance)
+    
     return instances
 
 
-def check_instances_exist(instances_dir: str = 'instances', expected_count: int = 50) -> bool:
-    """
-    检查instances目录是否存在足够数量的实例文件
-    
-    Args:
-        instances_dir: 实例数据目录路径
-        expected_count: 期望的实例数量
-    
-    Returns:
-        bool: 如果存在足够数量的实例文件返回True，否则返回False
-    """
-    if not os.path.exists(instances_dir):
-        return False
-    
-    files = [f for f in os.listdir(instances_dir) if f.endswith('.json')]
-    return len(files) >= expected_count
-
-
 def main():
-    parser = argparse.ArgumentParser(description='批量测试：生成50组数据并使用不同方法求解')
-    parser.add_argument('--regenerate', action='store_true', 
-                       help='强制重新生成数据（即使instances目录已存在数据）')
+    parser = argparse.ArgumentParser(
+        description='批量测试：从指定目录加载数据并使用不同方法求解',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  # 使用默认instances目录
+  python batch_test.py
+  
+  # 指定数据目录
+  python batch_test.py --data-dir my_instances
+  
+  # 指定运行的方法
+  python batch_test.py --methods greedy milp genetic
+  
+  # 运行所有方法
+  python batch_test.py --methods all
+
+注意: 数据生成请使用 data_generator.py
+  python data_generator.py --output instances
+        """
+    )
+    parser.add_argument('--data-dir', type=str, default='instances',
+                       help='数据目录路径（默认: instances）')
     parser.add_argument('--methods', type=str, nargs='+',
                        default=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic'],
                        choices=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic', 'ga', 'all'],
                        help='要运行的求解方法（默认: greedy milp brute_force ant_colony genetic）')
+    parser.add_argument('--output', type=str, default='batch_test_results.csv',
+                       help='结果输出CSV文件路径（默认: batch_test_results.csv）')
     
     args = parser.parse_args()
     
@@ -309,39 +284,19 @@ def main():
             methods.append('genetic')
     
     print("=" * 80)
-    print("批量测试：生成50组数据并使用不同方法求解")
+    print("批量测试：加载数据并使用不同方法求解")
     print("=" * 80)
     
-    # 检查是否需要生成数据
-    instances_dir = 'instances'
-    need_generate = args.regenerate or not check_instances_exist(instances_dir, expected_count=50)
-    
-    if need_generate:
-        # 生成50组数据
-        print("\n步骤1: 生成50组测试数据...")
-        instances = generate_50_instances()
-        print(f"\n共生成 {len(instances)} 组数据")
-        
-        # 保存实例数据
-        os.makedirs(instances_dir, exist_ok=True)
-        for instance in instances:
-            filename = f"{instances_dir}/{instance['problem_id']}.json"
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(instance, f, indent=2, ensure_ascii=False)
-    else:
-        # 加载已存在的实例数据
-        print("\n步骤1: 加载已存在的实例数据...")
-        instances = load_instances_from_dir(instances_dir)
-        print(f"从 {instances_dir}/ 目录加载了 {len(instances)} 个实例")
-        if len(instances) == 0:
-            print("警告: 未找到实例文件，将重新生成...")
-            instances = generate_50_instances()
-            os.makedirs(instances_dir, exist_ok=True)
-            for instance in instances:
-                filename = f"{instances_dir}/{instance['problem_id']}.json"
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(instance, f, indent=2, ensure_ascii=False)
-            print(f"共生成 {len(instances)} 组数据")
+    # 加载实例数据
+    print(f"\n步骤1: 从目录加载实例数据: {args.data_dir}")
+    try:
+        instances = load_instances_from_dir(args.data_dir)
+        print(f"✓ 成功加载 {len(instances)} 个实例")
+    except (FileNotFoundError, ValueError) as e:
+        print(f"✗ 错误: {e}")
+        print(f"\n提示: 请先使用 data_generator.py 生成数据:")
+        print(f"  python data_generator.py --output {args.data_dir}")
+        return
     
     # 对每组数据运行求解器
     print("\n步骤2: 运行求解器...")
@@ -354,7 +309,7 @@ def main():
     
     # 保存结果
     print("\n步骤3: 保存结果...")
-    save_results_to_csv(all_results, 'batch_test_results.csv')
+    save_results_to_csv(all_results, args.output)
     
     # 打印统计信息
     print("\n" + "=" * 80)

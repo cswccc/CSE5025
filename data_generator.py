@@ -5,6 +5,8 @@
 
 import numpy as np
 import random
+import argparse
+import os
 from typing import Tuple, Dict, List
 import json
 
@@ -197,26 +199,127 @@ class DataGenerator:
             return json.load(f)
 
 
+def generate_batch_instances(
+    output_dir: str = "instances",
+    problem_sizes: List[Tuple[int, int]] = None,
+    instances_per_size: int = 10,
+    coverage_rate: float = 0.3,
+    unified_profit: float = 5.0,
+    seed_base: int = 0
+):
+    """
+    批量生成测试实例并保存到指定目录
+    
+    Args:
+        output_dir: 输出目录路径
+        problem_sizes: 问题规模列表，每个元素为(n, m)元组。如果为None，使用默认配置
+        instances_per_size: 每个规模生成的实例数量
+        coverage_rate: 覆盖率
+        unified_profit: 统一收益值
+        seed_base: 种子基础值，每个实例的seed = seed_base + idx
+    """
+    if problem_sizes is None:
+        # 默认配置：5组不同的(n, m)组合
+        problem_sizes = [
+            (10, 5),   # 小规模
+            (15, 8),   # 中小规模
+            (20, 10),  # 中等规模
+            (25, 12),  # 中大规模
+            (30, 15),  # 大规模
+        ]
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    all_instances = []
+    total_count = 0
+    
+    print("=" * 80)
+    print(f"批量生成测试数据到目录: {output_dir}")
+    print("=" * 80)
+    
+    for group_idx, (n, m) in enumerate(problem_sizes):
+        print(f"\n生成第 {group_idx + 1}/{len(problem_sizes)} 组: n={n}, m={m}")
+        
+        for instance_idx in range(instances_per_size):
+            seed = group_idx * 1000 + seed_base + instance_idx
+            generator = DataGenerator(seed=seed)
+            
+            instance = generator.generate_instance(
+                n=n,
+                m=m,
+                coverage_rate=coverage_rate,
+                unified_profit=unified_profit
+            )
+            
+            # 添加元数据
+            problem_id = f"P{group_idx+1}_S{instance_idx+1}"
+            instance['problem_id'] = problem_id
+            instance['seed'] = seed
+            
+            # 保存到文件
+            filename = os.path.join(output_dir, f"{problem_id}.json")
+            generator.save_instance(instance, filename)
+            
+            all_instances.append(instance)
+            total_count += 1
+            print(f"  ✓ {problem_id}: seed={seed}")
+    
+    print(f"\n共生成 {total_count} 个实例，已保存到 {output_dir}/")
+    return all_instances
+
+
 if __name__ == "__main__":
-    # 测试数据生成
-    generator = DataGenerator(seed=42)
+    parser = argparse.ArgumentParser(description='批量生成充电桩覆盖收益最大化问题的测试数据')
+    parser.add_argument('--output', '-o', type=str, default='instances',
+                       help='输出目录路径（默认: instances）')
+    parser.add_argument('--problem-sizes', type=str, 
+                       help='问题规模，格式: "n1,m1;n2,m2;..." (例如: "10,5;15,8;20,10")')
+    parser.add_argument('--instances-per-size', type=int, default=10,
+                       help='每个规模生成的实例数量（默认: 10）')
+    parser.add_argument('--coverage-rate', type=float, default=0.3,
+                       help='覆盖率（默认: 0.3）')
+    parser.add_argument('--unified-profit', type=float, default=5.0,
+                       help='统一收益值（默认: 5.0）')
+    parser.add_argument('--seed-base', type=int, default=0,
+                       help='种子基础值（默认: 0）')
+    parser.add_argument('--test', action='store_true',
+                       help='生成单个测试实例用于验证')
     
-    # 生成一个小规模实例用于测试（使用统一收益5.0）
-    instance = generator.generate_instance(
-        n=10, 
-        m=5,
-        coverage_rate=0.4,
-        unified_profit=5.0  # 所有楼栋使用统一的单位收益
-    )
+    args = parser.parse_args()
     
-    print("生成的问题实例:")
-    print(f"楼栋数量: {instance['n']}")
-    print(f"区域数量: {instance['m']}")
-    print(f"需求: {instance['D']}")
-    print(f"单位收益: {[f'{p:.2f}' for p in instance['p']]} (统一收益: {instance['p'][0]:.2f})")
-    print(f"建设成本: {[f'{c:.2f}' for c in instance['c']]}")
-    print(f"容量上限: {instance['U']}")
-    print(f"覆盖矩阵形状: {len(instance['a'])}x{len(instance['a'][0])}")
-    
-    # 保存示例
-    generator.save_instance(instance, "test_instance.json")
+    if args.test:
+        # 测试模式：生成单个实例用于验证
+        generator = DataGenerator(seed=42)
+        instance = generator.generate_instance(
+            n=10, 
+            m=5,
+            coverage_rate=0.4,
+            unified_profit=args.unified_profit
+        )
+        
+        print("生成的问题实例:")
+        print(f"楼栋数量: {instance['n']}")
+        print(f"区域数量: {instance['m']}")
+        print(f"需求: {instance['D'][:5]}... (总共{len(instance['D'])}个)")
+        print(f"单位收益: {instance['p'][:5]}... (统一收益: {instance['p'][0]:.2f})")
+        print(f"建设成本: {[f'{c:.2f}' for c in instance['c']]}")
+        print(f"容量上限: {instance['U']}")
+        print(f"覆盖矩阵形状: {len(instance['a'])}x{len(instance['a'][0])}")
+    else:
+        # 批量生成模式
+        problem_sizes = None
+        if args.problem_sizes:
+            # 解析问题规模
+            problem_sizes = []
+            for size_str in args.problem_sizes.split(';'):
+                n, m = map(int, size_str.split(','))
+                problem_sizes.append((n, m))
+        
+        generate_batch_instances(
+            output_dir=args.output,
+            problem_sizes=problem_sizes,
+            instances_per_size=args.instances_per_size,
+            coverage_rate=args.coverage_rate,
+            unified_profit=args.unified_profit,
+            seed_base=args.seed_base
+        )
