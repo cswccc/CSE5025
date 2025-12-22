@@ -47,7 +47,8 @@ class AntColonySolver(BaseSolver):
                  alpha: float = 1.0,  # 信息素重要程度
                  beta: float = 2.0,   # 启发式信息重要程度
                  rho: float = 0.1,    # 信息素挥发系数
-                 q: float = 100.0):   # 信息素强度
+                 q: float = 100.0,    # 信息素强度
+                 early_stop_patience: int = 30):  # 早停耐心值
         """
         初始化蚁群算法求解器
         
@@ -59,6 +60,7 @@ class AntColonySolver(BaseSolver):
             beta: 启发式信息重要程度
             rho: 信息素挥发系数
             q: 信息素强度
+            early_stop_patience: 早停耐心值，连续多少代没有改进则提前终止（默认30次迭代）
         """
         super().__init__(instance)
         self.num_ants = num_ants
@@ -67,6 +69,7 @@ class AntColonySolver(BaseSolver):
         self.beta = beta
         self.rho = rho
         self.q = q
+        self.early_stop_patience = early_stop_patience
         
         # 初始化信息素矩阵（区域之间的信息素）
         # 这里我们简化为每个区域的信息素水平
@@ -103,10 +106,14 @@ class AntColonySolver(BaseSolver):
         best_solution = None
         best_objective = float('-inf')
         
+        # 早停机制：记录连续没有改进的迭代次数
+        no_improve_count = 0
+        
         for iteration in range(self.max_iterations):
             # 所有蚂蚁构建解
             solutions = []
             objectives = []
+            improved = False
             
             for ant in range(self.num_ants):
                 z = self._construct_solution()
@@ -117,12 +124,24 @@ class AntColonySolver(BaseSolver):
                 if obj > best_objective:
                     best_objective = obj
                     best_solution = z.copy()
+                    improved = True
+            
+            # 更新早停计数器
+            if improved:
+                no_improve_count = 0
+            else:
+                no_improve_count += 1
             
             # 更新信息素
             self._update_pheromone(solutions, objectives, best_solution, best_objective)
             
             if iteration % 10 == 0:
                 print(f"迭代 {iteration}: 最佳目标值 = {best_objective:.2f}")
+            
+            # 早停检查：如果连续early_stop_patience次迭代没有改进，提前终止
+            if no_improve_count >= self.early_stop_patience:
+                print(f"迭代 {iteration}: 连续{self.early_stop_patience}次迭代无改进，提前终止（早停）")
+                break
         
         # 解码最佳解
         z_best = best_solution
