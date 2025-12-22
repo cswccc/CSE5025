@@ -6,6 +6,7 @@ import os
 import json
 import csv
 import time
+import argparse
 import numpy as np
 from typing import List, Dict
 from data_generator import DataGenerator
@@ -13,7 +14,8 @@ from solvers import (
     BruteForceSolver,
     GreedySolver,
     MILPSolver,
-    AntColonySolver
+    AntColonySolver,
+    GeneticAlgorithmSolver
 )
 
 
@@ -157,8 +159,8 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             print(f"  [{problem_id}] 运行蚁群算法...")
             solver = AntColonySolver(
                 instance,
-                num_ants=20,
-                max_iterations=50  # 为了加快速度，减少迭代次数
+                num_ants=30,  # 增加蚂蚁数量
+                max_iterations=150  # 增加迭代次数以获得更好的结果
             )
             start_time = time.time()
             solution, objective = solver.solve()
@@ -180,6 +182,37 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             results['ant_colony_time'] = None
             results['ant_colony_feasible'] = False
     
+    # 遗传算法
+    if 'genetic' in methods or 'ga' in methods:
+        try:
+            method_name = 'genetic' if 'genetic' in methods else 'ga'
+            print(f"  [{problem_id}] 运行遗传算法...")
+            solver = GeneticAlgorithmSolver(
+                instance,
+                pop_size=50,
+                max_generations=100
+            )
+            start_time = time.time()
+            solution, objective = solver.solve()
+            elapsed_time = time.time() - start_time
+            is_feasible, msg = solver.is_feasible(
+                np.array(solution['z']),
+                np.array(solution['x']),
+                np.array(solution['y'])
+            )
+            results[f'{method_name}_objective'] = objective
+            results[f'{method_name}_time'] = elapsed_time
+            results[f'{method_name}_feasible'] = is_feasible
+            results[f'{method_name}_z_count'] = sum(solution['z'])
+            results[f'{method_name}_x_total'] = sum(solution['x'])
+            print(f"  [{problem_id}] 遗传算法完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
+        except Exception as e:
+            print(f"  [{problem_id}] 遗传算法失败: {e}")
+            method_name = 'genetic' if 'genetic' in methods else 'ga'
+            results[f'{method_name}_objective'] = None
+            results[f'{method_name}_time'] = None
+            results[f'{method_name}_feasible'] = False
+    
     return results
 
 
@@ -195,7 +228,7 @@ def save_results_to_csv(results_list: List[Dict], filename: str = 'batch_test_re
     fieldnames = ['problem_id', 'n', 'm', 'seed']
     
     # 添加各方法的字段
-    methods = ['greedy', 'milp', 'brute_force', 'ant_colony']
+    methods = ['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic']
     for method in methods:
         fieldnames.extend([
             f'{method}_objective',
@@ -215,25 +248,100 @@ def save_results_to_csv(results_list: List[Dict], filename: str = 'batch_test_re
     print(f"\n结果已保存到: {filename}")
 
 
+def load_instances_from_dir(instances_dir: str = 'instances') -> List[Dict]:
+    """
+    从instances目录加载已存在的实例数据
+    
+    Args:
+        instances_dir: 实例数据目录路径
+    
+    Returns:
+        List[Dict]: 实例列表
+    """
+    instances = []
+    if os.path.exists(instances_dir):
+        files = sorted([f for f in os.listdir(instances_dir) if f.endswith('.json')])
+        for filename in files:
+            filepath = os.path.join(instances_dir, filename)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                instance = json.load(f)
+                instances.append(instance)
+    return instances
+
+
+def check_instances_exist(instances_dir: str = 'instances', expected_count: int = 50) -> bool:
+    """
+    检查instances目录是否存在足够数量的实例文件
+    
+    Args:
+        instances_dir: 实例数据目录路径
+        expected_count: 期望的实例数量
+    
+    Returns:
+        bool: 如果存在足够数量的实例文件返回True，否则返回False
+    """
+    if not os.path.exists(instances_dir):
+        return False
+    
+    files = [f for f in os.listdir(instances_dir) if f.endswith('.json')]
+    return len(files) >= expected_count
+
+
 def main():
+    parser = argparse.ArgumentParser(description='批量测试：生成50组数据并使用不同方法求解')
+    parser.add_argument('--regenerate', action='store_true', 
+                       help='强制重新生成数据（即使instances目录已存在数据）')
+    parser.add_argument('--methods', type=str, nargs='+',
+                       default=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic'],
+                       choices=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic', 'ga', 'all'],
+                       help='要运行的求解方法（默认: greedy milp brute_force ant_colony genetic）')
+    
+    args = parser.parse_args()
+    
+    # 处理methods参数
+    methods = args.methods
+    if 'all' in methods:
+        methods = ['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic']
+    # 将'ga'统一为'genetic'
+    if 'ga' in methods:
+        methods = [m if m != 'ga' else 'genetic' for m in methods]
+        if 'genetic' not in methods:
+            methods.append('genetic')
+    
     print("=" * 80)
     print("批量测试：生成50组数据并使用不同方法求解")
     print("=" * 80)
     
-    # 选择要运行的方法
-    methods = ['greedy', 'milp', 'brute_force', 'ant_colony']
+    # 检查是否需要生成数据
+    instances_dir = 'instances'
+    need_generate = args.regenerate or not check_instances_exist(instances_dir, expected_count=50)
     
-    # 生成50组数据
-    print("\n步骤1: 生成50组测试数据...")
-    instances = generate_50_instances()
-    print(f"\n共生成 {len(instances)} 组数据")
-    
-    # 保存实例数据（可选）
-    os.makedirs('instances', exist_ok=True)
-    for instance in instances:
-        filename = f"instances/{instance['problem_id']}.json"
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(instance, f, indent=2, ensure_ascii=False)
+    if need_generate:
+        # 生成50组数据
+        print("\n步骤1: 生成50组测试数据...")
+        instances = generate_50_instances()
+        print(f"\n共生成 {len(instances)} 组数据")
+        
+        # 保存实例数据
+        os.makedirs(instances_dir, exist_ok=True)
+        for instance in instances:
+            filename = f"{instances_dir}/{instance['problem_id']}.json"
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(instance, f, indent=2, ensure_ascii=False)
+    else:
+        # 加载已存在的实例数据
+        print("\n步骤1: 加载已存在的实例数据...")
+        instances = load_instances_from_dir(instances_dir)
+        print(f"从 {instances_dir}/ 目录加载了 {len(instances)} 个实例")
+        if len(instances) == 0:
+            print("警告: 未找到实例文件，将重新生成...")
+            instances = generate_50_instances()
+            os.makedirs(instances_dir, exist_ok=True)
+            for instance in instances:
+                filename = f"{instances_dir}/{instance['problem_id']}.json"
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(instance, f, indent=2, ensure_ascii=False)
+            print(f"共生成 {len(instances)} 组数据")
     
     # 对每组数据运行求解器
     print("\n步骤2: 运行求解器...")
@@ -253,13 +361,15 @@ def main():
     print("测试完成！统计信息:")
     print("=" * 80)
     
+    # 统一处理genetic方法名
     for method in methods:
-        objectives = [r.get(f'{method}_objective') for r in all_results 
-                     if r.get(f'{method}_objective') is not None]
+        display_name = 'genetic' if method == 'ga' else method
+        objectives = [r.get(f'{display_name}_objective') for r in all_results 
+                     if r.get(f'{display_name}_objective') is not None]
         if objectives:
-            times = [r.get(f'{method}_time') for r in all_results 
-                    if r.get(f'{method}_time') is not None]
-            print(f"\n{method.upper()}:")
+            times = [r.get(f'{display_name}_time') for r in all_results 
+                    if r.get(f'{display_name}_time') is not None]
+            print(f"\n{display_name.upper()}:")
             print(f"  成功运行: {len(objectives)}/{len(all_results)}")
             print(f"  平均目标值: {np.mean(objectives):.2f}")
             print(f"  最大目标值: {np.max(objectives):.2f}")
