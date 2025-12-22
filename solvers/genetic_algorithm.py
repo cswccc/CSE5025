@@ -47,7 +47,8 @@ class GeneticAlgorithmSolver(BaseSolver):
                  max_generations: int = 100,
                  crossover_rate: float = 0.8,
                  mutation_rate: float = 0.1,
-                 elite_rate: float = 0.1):
+                 elite_rate: float = 0.1,
+                 early_stop_patience: int = 20):
         """
         初始化遗传算法求解器
         
@@ -58,6 +59,7 @@ class GeneticAlgorithmSolver(BaseSolver):
             crossover_rate: 交叉率
             mutation_rate: 变异率
             elite_rate: 精英比例
+            early_stop_patience: 早停耐心值，连续多少代没有改进则提前终止（默认20代）
         """
         super().__init__(instance)
         self.pop_size = pop_size
@@ -65,6 +67,7 @@ class GeneticAlgorithmSolver(BaseSolver):
         self.crossover_rate = crossover_rate
         self.mutation_rate = mutation_rate
         self.elite_rate = elite_rate
+        self.early_stop_patience = early_stop_patience
     
     def solve(self) -> Tuple[Dict, float]:
         """
@@ -92,10 +95,14 @@ class GeneticAlgorithmSolver(BaseSolver):
         best_individual = None
         best_fitness = float('-inf')
         
+        # 早停机制：记录连续没有改进的代数
+        no_improve_count = 0
+        
         # 步骤2: 主循环（进化过程）
         for generation in range(self.max_generations):
             # 步骤2a: 评估适应度（目标函数值）
             fitness_scores = []
+            improved = False
             for individual in population:
                 z = individual  # 个体就是建设决策z
                 # 解码：根据z计算x和y，并得到目标函数值
@@ -106,6 +113,13 @@ class GeneticAlgorithmSolver(BaseSolver):
                 if obj > best_fitness:
                     best_fitness = obj
                     best_individual = z.copy()
+                    improved = True
+            
+            # 更新早停计数器
+            if improved:
+                no_improve_count = 0
+            else:
+                no_improve_count += 1
             
             # 步骤2b: 选择（根据适应度选择父代）
             selected = self._select(population, fitness_scores)
@@ -127,6 +141,11 @@ class GeneticAlgorithmSolver(BaseSolver):
             # 每10代输出一次进度
             if generation % 10 == 0:
                 print(f"代 {generation}: 最佳适应度 = {best_fitness:.2f}")
+            
+            # 早停检查：如果连续early_stop_patience代没有改进，提前终止
+            if no_improve_count >= self.early_stop_patience:
+                print(f"代 {generation}: 连续{self.early_stop_patience}代无改进，提前终止（早停）")
+                break
         
         # 解码最佳个体
         z_best = best_individual

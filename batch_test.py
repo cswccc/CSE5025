@@ -265,7 +265,8 @@ def main():
     parser.add_argument('--data-dir', type=str, default='instances',
                        help='数据目录路径（默认: instances）')
     parser.add_argument('--methods', type=str, nargs='+',
-                       default=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic'],
+                    #    default=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic'],
+                    default=['greedy', 'milp', 'brute_force'],
                        choices=['greedy', 'milp', 'brute_force', 'ant_colony', 'genetic', 'ga', 'all'],
                        help='要运行的求解方法（默认: greedy milp brute_force ant_colony genetic）')
     parser.add_argument('--output', type=str, default='batch_test_results.csv',
