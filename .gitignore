@@ -32,14 +32,18 @@ ENV/
 *.swo
 *~
 
-# 数据文件
+# 数据文件（实例和结果）
 *.json
 !requirements.txt
-
-# 结果文件
+instances/
+batch_test_results.csv
 results.json
 instance.json
 test_instance.json
+
+# 临时和测试文件
+debug_solver.py
+test_imports.py
 
 # 日志
 *.log
