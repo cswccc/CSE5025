@@ -41,7 +41,8 @@ def generate_50_instances():
             instance = generator.generate_instance(
                 n=n,
                 m=m,
-                coverage_rate=0.3
+                coverage_rate=0.3,
+                unified_profit=5.0  # 使用统一收益5.0
             )
             instance['problem_id'] = f"P{idx+1}_S{seed_offset+1}"
             instance['seed'] = seed

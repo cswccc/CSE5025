@@ -65,19 +65,26 @@ class DataGenerator:
         """
         return np.random.randint(min_demand, max_demand + 1, size=n)
     
-    def generate_unit_profits(self, n: int, min_profit: float = 1.0, max_profit: float = 10.0) -> np.ndarray:
+    def generate_unit_profits(self, n: int, min_profit: float = 1.0, max_profit: float = 10.0, 
+                              unified_profit: float = None) -> np.ndarray:
         """
         生成每栋楼的单位收益 p_i
         
         Args:
             n: 楼栋数量
-            min_profit: 最小单位收益
-            max_profit: 最大单位收益
+            min_profit: 最小单位收益（当unified_profit为None时使用）
+            max_profit: 最大单位收益（当unified_profit为None时使用）
+            unified_profit: 统一收益值，如果提供则所有楼栋使用相同的单位收益
             
         Returns:
             p: 长度为n的单位收益数组
         """
-        return np.random.uniform(min_profit, max_profit, size=n)
+        if unified_profit is not None:
+            # 使用统一收益：所有楼栋的单位收益相同
+            return np.ones(n) * unified_profit
+        else:
+            # 使用随机收益：在[min_profit, max_profit]范围内随机生成
+            return np.random.uniform(min_profit, max_profit, size=n)
     
     def generate_costs(self, m: int, min_cost: float = 50.0, max_cost: float = 500.0) -> np.ndarray:
         """
@@ -116,6 +123,7 @@ class DataGenerator:
         max_demand: int = 100,
         min_profit: float = 1.0,
         max_profit: float = 10.0,
+        unified_profit: float = 5.0,  # 默认使用统一收益5.0
         min_cost: float = 50.0,
         max_cost: float = 500.0,
         min_capacity: int = 20,
@@ -130,8 +138,9 @@ class DataGenerator:
             coverage_rate: 覆盖率
             min_demand: 最小需求
             max_demand: 最大需求
-            min_profit: 最小单位收益
-            max_profit: 最大单位收益
+            min_profit: 最小单位收益（当unified_profit为None时使用）
+            max_profit: 最大单位收益（当unified_profit为None时使用）
+            unified_profit: 统一收益值，如果提供则所有楼栋使用相同的单位收益（默认5.0）
             min_cost: 最小建设成本
             max_cost: 最大建设成本
             min_capacity: 最小容量上限
@@ -144,7 +153,7 @@ class DataGenerator:
             'n': n,  # 楼栋数量
             'm': m,  # 区域数量
             'D': self.generate_demands(n, min_demand, max_demand).tolist(),  # 需求
-            'p': self.generate_unit_profits(n, min_profit, max_profit).tolist(),  # 单位收益
+            'p': self.generate_unit_profits(n, min_profit, max_profit, unified_profit).tolist(),  # 单位收益（统一）
             'c': self.generate_costs(m, min_cost, max_cost).tolist(),  # 建设成本
             'U': self.generate_capacity_limits(m, min_capacity, max_capacity).tolist(),  # 容量上限
             'a': self.generate_coverage_matrix(n, m, coverage_rate).tolist()  # 覆盖关系矩阵
@@ -167,18 +176,19 @@ if __name__ == "__main__":
     # 测试数据生成
     generator = DataGenerator(seed=42)
     
-    # 生成一个小规模实例用于测试
+    # 生成一个小规模实例用于测试（使用统一收益5.0）
     instance = generator.generate_instance(
         n=10, 
         m=5,
-        coverage_rate=0.4
+        coverage_rate=0.4,
+        unified_profit=5.0  # 所有楼栋使用统一的单位收益
     )
     
     print("生成的问题实例:")
     print(f"楼栋数量: {instance['n']}")
     print(f"区域数量: {instance['m']}")
     print(f"需求: {instance['D']}")
-    print(f"单位收益: {[f'{p:.2f}' for p in instance['p']]}")
+    print(f"单位收益: {[f'{p:.2f}' for p in instance['p']]} (统一收益: {instance['p'][0]:.2f})")
     print(f"建设成本: {[f'{c:.2f}' for c in instance['c']]}")
     print(f"容量上限: {instance['U']}")
     print(f"覆盖矩阵形状: {len(instance['a'])}x{len(instance['a'][0])}")
