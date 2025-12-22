@@ -91,12 +91,15 @@ python main.py --instance instance.json --methods all
 - `--m M`: 区域数量（默认10）
 - `--methods METHOD [METHOD ...]`: 指定要运行的求解方法
   - `brute_force`: 暴力枚举法
-  - `greedy`: 贪心算法
+  - `greedy`: 基础贪心算法
+  - `improved_greedy`: 改进贪心算法（推荐，利用统一收益特性）
   - `milp`: MILP求解器
-  - `ga`: 遗传算法
-  - `aco`: 蚁群算法
-  - `nn`: 神经网络方法
-  - `all`: 运行所有方法
+  - `ga`: 基础遗传算法
+  - `improved_ga`: 改进遗传算法（智能初始化+局部搜索）
+  - `local_search`: 局部搜索（可作为后处理）
+  - `aco`: 蚁群算法（不推荐使用）
+  - `nn`: 神经网络方法（不推荐使用）
+  - `all`: 运行所有推荐方法（不包括aco和nn）
 - `--output FILE`: 结果输出文件（默认results.json）
 
 ## 数据生成逻辑
@@ -142,6 +145,36 @@ generator.save_instance(instance, "my_instance.json")
 ```
 
 ## 求解方法说明
+
+### 推荐方法（针对统一收益优化）
+
+针对问题的特殊结构（统一收益、成本与容量成正比），推荐使用以下优化方法：
+
+#### 改进贪心算法 (ImprovedGreedy)
+- **文件**: `solvers/improved_greedy.py`
+- **特点**: 利用统一收益特性，使用多种贪心策略
+- **适用**: 所有规模，快速获得高质量解
+- **策略**: 
+  1. 基于容量利用率的贪心
+  2. 基于成本效益比的贪心
+  3. 增量贪心（边际收益最大化）
+
+#### 改进遗传算法 (ImprovedGenetic)
+- **文件**: `solvers/improved_genetic.py`
+- **特点**: 智能初始化、局部搜索改进、自适应参数
+- **适用**: 大规模问题
+- **优化**: 
+  - 使用贪心解作为初始个体
+  - 对优秀个体进行局部搜索
+  - 自适应调整变异率
+
+#### 局部搜索 (LocalSearch)
+- **文件**: `solvers/local_search.py`
+- **特点**: 作为后处理步骤，改进其他算法的解
+- **适用**: 与其他方法结合使用
+- **操作**: 添加/删除/交换区域的邻域搜索
+
+### 基础方法
 
 ### 1. 暴力枚举法 (Brute Force)
 
@@ -205,7 +238,7 @@ generator.save_instance(instance, "my_instance.json")
 
 ---
 
-### 4. 遗传算法 (Genetic Algorithm)
+### 4. 基础遗传算法 (Genetic Algorithm)
 
 **文件**: `solvers/genetic_algorithm.py`
 
@@ -235,6 +268,8 @@ generator.save_instance(instance, "my_instance.json")
 - 参数需要调优
 
 **适用场景**: 大规模问题，需要近似最优解
+
+**注意**: 建议使用改进遗传算法（ImprovedGeneticSolver）以获得更好的性能
 
 ---
 
