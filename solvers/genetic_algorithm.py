@@ -153,16 +153,101 @@ class GeneticAlgorithmSolver(BaseSolver):
     
     def _decode_individual(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        解码个体（将建设决策z转换为完整的解）
+        解码个体：对于给定的建设决策z，使用线性规划求解最优的x和y
         
-        给定建设决策z，使用贪心方法分配用户，得到x和y，并计算目标函数值。
-        这是遗传算法中的适应度评估过程。
+        优先使用LP求解（精确方法），如果不可用则使用贪心方法（近似方法）
+        这是遗传算法中的适应度评估过程，使用LP确保对每种建设方案都能找到最优解。
         
         Args:
             z: 建设决策数组，形状为(m,)，个体的编码
             
         Returns:
-            Tuple[np.ndarray, np.ndarray, float]: x, y和目标函数值
+            Tuple[np.ndarray, np.ndarray, float]: 最优的x, y和目标函数值
+        """
+        # 尝试使用线性规划求解（如果可用）
+        try:
+            import pulp
+            return self._solve_given_z_lp(z)
+        except ImportError:
+            # 如果没有PuLP，使用贪心方法作为备选
+            return self._solve_given_z_greedy(z)
+    
+    def _solve_given_z_lp(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        使用线性规划求解给定z的最优x和y（精确方法）
+        
+        将子问题建模为线性规划问题：
+        目标：max Σ_i Σ_j (p_i * y_ij) - Σ_j (c_j * z_j)
+        约束：
+            - y_ij ≤ D_i * a_ij * z_j  (覆盖关系)
+            - Σ_j y_ij ≤ D_i           (需求约束)
+            - Σ_i y_ij ≤ x_j           (容量约束)
+            - 0 ≤ x_j ≤ U_j * z_j      (容量上限)
+        
+        Args:
+            z: 建设决策数组，形状为(m,)
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray, float]: 最优的x, y和目标函数值
+        """
+        import pulp
+        
+        # 创建线性规划问题（最大化问题）
+        prob = pulp.LpProblem("SubProblem", pulp.LpMaximize)
+        
+        # 定义决策变量
+        # x_j: 区域j的充电桩数量，范围[0, U_j*z_j]
+        x = [pulp.LpVariable(f'x_{j}', lowBound=0, upBound=self.U[j] * z[j], cat='Continuous')
+             for j in range(self.m)]
+        # y_ij: 楼栋i分配到区域j的用户数，非负
+        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Continuous')
+              for j in range(self.m)] for i in range(self.n)]
+        
+        # 目标函数: max Σ_i Σ_j (p_i * y_ij) - Σ_j (c_j * z_j)
+        prob += (pulp.lpSum([self.p[i] * y[i][j] 
+                            for i in range(self.n) for j in range(self.m)])
+                - pulp.lpSum([self.c[j] * z[j] for j in range(self.m)]))
+        
+        # 约束1: 覆盖关系约束 y_ij ≤ D_i * a_ij * z_j
+        for i in range(self.n):
+            for j in range(self.m):
+                if self.a[i, j] == 1 and z[j] == 1:
+                    prob += y[i][j] <= self.D[i]
+                else:
+                    prob += y[i][j] == 0
+        
+        # 约束2: 需求约束 Σ_j y_ij ≤ D_i
+        for i in range(self.n):
+            prob += pulp.lpSum([y[i][j] for j in range(self.m)]) <= self.D[i]
+        
+        # 约束3: 容量约束 Σ_i y_ij ≤ x_j
+        for j in range(self.m):
+            prob += pulp.lpSum([y[i][j] for i in range(self.n)]) <= x[j]
+        
+        # 使用CBC求解器求解
+        solver = pulp.PULP_CBC_CMD(msg=0)  # msg=0表示不输出求解过程
+        prob.solve(solver)
+        
+        # 提取解（处理可能的None值）
+        x_sol = np.array([pulp.value(x[j]) if pulp.value(x[j]) is not None else 0.0
+                         for j in range(self.m)])
+        y_sol = np.array([[pulp.value(y[i][j]) if pulp.value(y[i][j]) is not None else 0.0
+                          for j in range(self.m)] for i in range(self.n)])
+        
+        # 计算目标函数值
+        objective = self.calculate_objective(z, x_sol, y_sol)
+        
+        return x_sol, y_sol, objective
+    
+    def _solve_given_z_greedy(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        使用贪心方法求解给定z的x和y（近似方法，当LP不可用时使用）
+        
+        Args:
+            z: 建设决策数组，形状为(m,)
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray, float]: 近似的x, y和目标函数值
         """
         x = np.zeros(self.m, dtype=float)
         y = np.zeros((self.n, self.m), dtype=float)
