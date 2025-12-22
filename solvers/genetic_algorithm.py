@@ -183,13 +183,8 @@ class GeneticAlgorithmSolver(BaseSolver):
         Returns:
             Tuple[np.ndarray, np.ndarray, float]: 最优的x, y和目标函数值（x和y为整数）
         """
-        # 尝试使用混合整数规划求解（如果可用）
-        try:
-            import pulp
-            return self._solve_given_z_lp(z)
-        except ImportError:
-            # 如果没有PuLP，使用贪心方法作为备选
-            return self._solve_given_z_greedy(z)
+        # 使用快速最优分配方法：x直接装满（U_j*z_j），然后最优分配y
+        return self.optimal_assign_given_z(z)
     
     def _solve_given_z_lp(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
         """

@@ -141,13 +141,8 @@ class BruteForceSolver(BaseSolver):
             - 优先使用混合整数规划（MIP）求解（精确方法）
             - 如果PuLP不可用，则使用贪心方法（近似方法）
         """
-        # 尝试使用混合整数规划求解（如果可用）
-        try:
-            import pulp
-            return self._solve_given_z_lp(z)
-        except ImportError:
-            # 如果没有PuLP，使用贪心方法作为备选
-            return self._solve_given_z_greedy(z)
+        # 使用快速最优分配方法：x直接装满（U_j*z_j），然后最优分配y
+        return self.optimal_assign_given_z(z)
     
     def _solve_given_z_lp(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
         """

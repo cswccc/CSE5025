@@ -91,8 +91,8 @@ class GreedySolver(BaseSolver):
             test_z = z.copy()
             test_z[j] = 1
             
-            # 在包含区域j的情况下，重新分配用户
-            test_x, test_y, test_obj = self._solve_given_z(test_z, x.copy(), y.copy())
+            # 使用新的最优分配方法：x直接装满，然后最优分配y
+            test_x, test_y, test_obj = self.optimal_assign_given_z(test_z)
             
             # 比较添加区域j前后的目标函数值
             current_obj = self.calculate_objective(z, x, y)
@@ -101,6 +101,9 @@ class GreedySolver(BaseSolver):
                 z[j] = 1
                 x = test_x.copy()
                 y = test_y.copy()
+        
+        # 步骤5: 对最终选中的区域集合，进行最优分配
+        x, y, _ = self.optimal_assign_given_z(z)
         
         self.solve_time = time.time() - start_time
         self.best_solution = {
@@ -111,80 +114,3 @@ class GreedySolver(BaseSolver):
         self.best_objective = self.calculate_objective(z, x, y)
         
         return self.best_solution, self.best_objective
-    
-    def _solve_given_z(self, z: np.ndarray, x_init: np.ndarray, y_init: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
-        """
-        在给定建设决策z的情况下，贪心分配用户
-        
-        这是一个子问题：已知哪些区域被建设，如何最优地分配用户。
-        使用贪心策略：优先将用户分配到单位收益最高的区域。
-        
-        Args:
-            z: 建设决策数组，形状为(m,)，z[j]=1表示区域j被建设
-            x_init: 初始充电桩数量数组，形状为(m,)
-            y_init: 初始用户分配矩阵，形状为(n, m)
-            
-        Returns:
-            Tuple[np.ndarray, np.ndarray, float]:
-                - x: 更新后的充电桩数量数组
-                - y: 更新后的用户分配矩阵
-                - objective: 目标函数值
-        """
-        x = x_init.copy()
-        y = y_init.copy()
-        
-        # 计算剩余需求和剩余容量
-        # remaining_demand[i]: 楼栋i还未被分配的用户数
-        remaining_demand = self.D - np.sum(y, axis=1)
-        # remaining_capacity[j]: 区域j还能服务的用户数
-        remaining_capacity = np.zeros(self.m, dtype=int)
-        for j in range(self.m):
-            if z[j] == 1:  # 只考虑已建设的区域
-                remaining_capacity[j] = self.U[j] - np.sum(y[:, j])
-        
-        # 构建收益矩阵：profit_matrix[i,j]表示楼栋i分配到区域j的单位收益
-        # 只有在满足条件时才设置收益值：区域j已建设、可以覆盖楼栋i、还有剩余需求和容量
-        profit_matrix = np.zeros((self.n, self.m))
-        for i in range(self.n):
-            for j in range(self.m):
-                if (self.a[i, j] == 1 and z[j] == 1 and 
-                    remaining_demand[i] > 0 and remaining_capacity[j] > 0):
-                    profit_matrix[i, j] = self.p[i]  # 单位收益即为p_i
-        
-        # 贪心分配：反复选择收益最高的分配，直到无法继续分配
-        while True:
-            # 找到收益最高的(楼栋,区域)对
-            max_profit = -1
-            best_i, best_j = -1, -1
-            
-            for i in range(self.n):
-                for j in range(self.m):
-                    if profit_matrix[i, j] > max_profit:
-                        max_profit = profit_matrix[i, j]
-                        best_i, best_j = i, j
-            
-            # 如果没有可分配的，退出循环
-            if max_profit <= 0:
-                break
-            
-            # 执行分配：分配尽可能多的用户（受剩余需求和容量限制）
-            amount = min(remaining_demand[best_i], remaining_capacity[best_j])
-            if amount > 0:
-                y[best_i, best_j] += amount  # 增加分配量
-                remaining_demand[best_i] -= amount  # 更新剩余需求
-                remaining_capacity[best_j] -= amount  # 更新剩余容量
-                profit_matrix[best_i, best_j] = 0  # 标记为已处理
-            else:
-                # 如果无法分配，也标记为已处理
-                profit_matrix[best_i, best_j] = 0
-        
-        # 设置充电桩数量：每个已建设的区域，充电桩数至少等于实际服务的用户数
-        for j in range(self.m):
-            if z[j] == 1:
-                # 取当前值和实际需要值的最大值（考虑之前可能已有分配）
-                x[j] = max(x[j], np.sum(y[:, j]))
-        
-        # 计算目标函数值
-        objective = self.calculate_objective(z, x, y)
-        
-        return x, y, objective

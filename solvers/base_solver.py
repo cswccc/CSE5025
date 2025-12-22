@@ -178,3 +178,218 @@ class BaseSolver(ABC):
         
         # 所有约束都满足
         return True, "可行"
+    
+    def optimal_assign_given_z(self, z: np.ndarray, method: str = 'mincostflow') -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        给定建设决策z，最优分配用户y（x直接装满为U_j*z_j）
+        
+        策略：
+        1. 设置x_j = U_j * z_j（选址后充电桩直接装满）
+        2. 使用最小费用最大流、MIP或贪心方法最优分配y
+        
+        Args:
+            z: 建设决策数组，形状为(m,)，z[j]∈{0,1}表示是否在区域j建设
+            method: 求解方法，可选：
+                - 'mincostflow': 最小费用最大流（默认，多项式时间，理论上最快）
+                - 'mip': 混合整数规划（保证最优解，但可能较慢）
+                - 'greedy': 贪心方法（快速但可能不是最优）
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray, float]:
+                - x: 充电桩数量数组，x[j] = U[j] * z[j]（整数）
+                - y: 用户分配矩阵（整数），最优分配
+                - objective: 目标函数值
+        """
+        # 步骤1: 设置x_j = U_j * z_j（直接装满）
+        x = (self.U * z).astype(int)
+        
+        # 步骤2: 根据指定方法分配y
+        if method == 'mincostflow':
+            try:
+                import networkx as nx
+                return self._optimal_assign_given_z_mincostflow(z, x)
+            except ImportError:
+                # 如果没有NetworkX，降级到MIP
+                method = 'mip'
+        
+        if method == 'mip':
+            try:
+                import pulp
+                return self._optimal_assign_given_z_mip(z, x)
+            except ImportError:
+                # 如果没有PuLP，降级到贪心方法
+                return self._optimal_assign_given_z_greedy(z, x)
+        
+        if method == 'greedy':
+            return self._optimal_assign_given_z_greedy(z, x)
+        
+        # 默认使用最小费用最大流
+        return self._optimal_assign_given_z_mincostflow(z, x)
+    
+    def _optimal_assign_given_z_mincostflow(self, z: np.ndarray, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        使用最小费用最大流算法精确求解给定z和x的最优y分配
+        
+        网络结构：
+        - 源点s
+        - 楼栋节点i（每个楼栋一个节点）
+        - 区域节点j（只包括已选中的区域j∈S，其中z[j]=1）
+        - 汇点t
+        
+        边：
+        - s → i: 容量D_i，费用0
+        - i → j: 容量D_i（如果a_ij=1且z[j]=1），费用-p_i
+        - j → t: 容量U_j，费用0
+        - i → t: 容量D_i，费用0（未被服务的用户）
+        
+        Args:
+            z: 建设决策数组
+            x: 充电桩数量数组（x[j] = U[j] * z[j]）
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray, float]: x, y, objective
+        """
+        import networkx as nx
+        
+        # 创建有向图
+        G = nx.DiGraph()
+        
+        # 节点命名
+        source = 's'
+        sink = 't'
+        
+        # 获取已选中的区域集合S
+        S = [j for j in range(self.m) if z[j] == 1]
+        
+        # 计算总需求（用于源点和汇点的供给/需求）
+        total_demand = int(np.sum(self.D))
+        
+        # 添加边
+        
+        # 1. 源点到楼栋的边：s → i，容量D_i，费用0
+        for i in range(self.n):
+            G.add_edge(source, f'i_{i}', capacity=int(self.D[i]), weight=0)
+        
+        # 2. 楼栋到区域的边：i → j（如果a_ij=1且j∈S），容量D_i，费用-p_i
+        for i in range(self.n):
+            for j in S:
+                if self.a[i, j] == 1:
+                    # NetworkX中weight表示费用，费用为-p_i（因为要最小化费用以最大化收益）
+                    G.add_edge(f'i_{i}', f'j_{j}', capacity=int(self.D[i]), weight=-float(self.p[i]))
+        
+        # 3. 区域到汇点的边：j → t，容量U_j，费用0
+        for j in S:
+            G.add_edge(f'j_{j}', sink, capacity=int(x[j]), weight=0)
+        
+        # 4. 楼栋直接到汇点的边：i → t，容量D_i，费用0（未被服务的用户）
+        for i in range(self.n):
+            G.add_edge(f'i_{i}', sink, capacity=int(self.D[i]), weight=0)
+        
+        # 求解最小费用最大流
+        # flowDict是一个字典，flowDict[u][v]表示边(u,v)上的流量
+        flowDict = nx.max_flow_min_cost(G, source, sink)
+        
+        # 从流中恢复y分配
+        y = np.zeros((self.n, self.m), dtype=int)
+        
+        for i in range(self.n):
+            node_i = f'i_{i}'
+            for j in S:
+                node_j = f'j_{j}'
+                if node_j in flowDict.get(node_i, {}):
+                    y[i, j] = int(flowDict[node_i][node_j])
+        
+        # 计算总费用（注意：NetworkX返回的是最小费用，但我们需要最大收益）
+        min_cost = nx.cost_of_flow(G, flowDict)
+        # 由于我们在边i→j上设置的费用是-p_i，所以：
+        # min_cost = -Σ p_i * y_ij
+        # 因此最大收益 = -min_cost
+        max_revenue = -min_cost
+        
+        # 计算完整的目标函数值（包括成本项）
+        objective = self.calculate_objective(z, x, y)
+        
+        return x, y, objective
+    
+    def _optimal_assign_given_z_mip(self, z: np.ndarray, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        使用MIP精确求解给定z和x的最优y分配
+        """
+        import pulp
+        
+        # 创建MIP问题（最大化问题）
+        prob = pulp.LpProblem("OptimalAssign", pulp.LpMaximize)
+        
+        # 定义决策变量：y_ij（整数）
+        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Integer')
+              for j in range(self.m)] for i in range(self.n)]
+        
+        # 目标函数: max Σ_i Σ_j (p_i * y_ij)
+        prob += pulp.lpSum([self.p[i] * y[i][j] 
+                           for i in range(self.n) for j in range(self.m)])
+        
+        # 约束1: 覆盖关系约束 y_ij ≤ D_i * a_ij * z_j
+        for i in range(self.n):
+            for j in range(self.m):
+                if self.a[i, j] == 1 and z[j] == 1:
+                    prob += y[i][j] <= self.D[i]
+                else:
+                    prob += y[i][j] == 0
+        
+        # 约束2: 需求约束 Σ_j y_ij ≤ D_i
+        for i in range(self.n):
+            prob += pulp.lpSum([y[i][j] for j in range(self.m)]) <= self.D[i]
+        
+        # 约束3: 容量约束 Σ_i y_ij ≤ x_j
+        for j in range(self.m):
+            prob += pulp.lpSum([y[i][j] for i in range(self.n)]) <= x[j]
+        
+        # 求解
+        solver = pulp.PULP_CBC_CMD(msg=0)
+        prob.solve(solver)
+        
+        # 提取解
+        y_sol = np.array([[int(round(pulp.value(y[i][j]))) if pulp.value(y[i][j]) is not None else 0
+                          for j in range(self.m)] for i in range(self.n)], dtype=int)
+        
+        # 计算目标函数值（包括成本项）
+        objective = self.calculate_objective(z, x, y_sol)
+        
+        return x, y_sol, objective
+    
+    def _optimal_assign_given_z_greedy(self, z: np.ndarray, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
+        """
+        使用贪心方法近似分配y（当MIP不可用时使用）
+        """
+        # 初始化y为全零
+        y = np.zeros((self.n, self.m), dtype=int)
+        
+        # 构建可分配的(楼栋, 区域)对列表，按单位收益排序
+        allocations = []
+        for i in range(self.n):
+            for j in range(self.m):
+                # 只有当区域j已建设且可以覆盖楼栋i时，才能分配
+                if self.a[i, j] == 1 and z[j] == 1:
+                    allocations.append((i, j, self.p[i]))
+        
+        # 按单位收益从高到低排序
+        allocations.sort(key=lambda item: item[2], reverse=True)
+        
+        # 贪心分配用户
+        remaining_demand = self.D.copy().astype(int)  # 剩余需求
+        remaining_capacity = x.copy()  # 剩余容量（初始为x，即U_j*z_j）
+        
+        for i, j, profit in allocations:
+            if remaining_demand[i] <= 0 or remaining_capacity[j] <= 0:
+                continue
+            
+            # 分配尽可能多的用户（受剩余需求和剩余容量限制）
+            amount = min(remaining_demand[i], remaining_capacity[j])
+            y[i, j] = amount
+            remaining_demand[i] -= amount
+            remaining_capacity[j] -= amount
+        
+        # 计算目标函数值
+        objective = self.calculate_objective(z, x, y)
+        
+        return x, y, objective

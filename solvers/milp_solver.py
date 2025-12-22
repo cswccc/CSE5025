@@ -133,10 +133,10 @@ class MILPSolver(BaseSolver):
         for j in range(self.m):
             prob += pulp.lpSum([y[i][j] for i in range(self.n)]) <= x[j]
         
-        # 约束4: 容量上限和建设约束 x_j ≤ U_j * z_j
-        # 大M方法：当z_j=0时，x_j必须为0；当z_j=1时，x_j ≤ U_j
+        # 约束4: 容量上限和建设约束 x_j = U_j * z_j
+        # 新策略：一旦选址，充电桩直接装满
         for j in range(self.m):
-            prob += x[j] <= self.U[j] * z[j]
+            prob += x[j] == self.U[j] * z[j]
         
         # 求解
         try:

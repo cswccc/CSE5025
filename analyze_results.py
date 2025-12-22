@@ -6,7 +6,8 @@
 import csv
 import argparse
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+from collections import defaultdict
 
 
 def load_results(csv_file: str) -> List[Dict]:
@@ -227,6 +228,180 @@ def analyze_all_problems(results: List[Dict], verbose: bool = True):
         print(f"  • {method_names[method]:<12}: {count:3d} 次 ({count/len(results)*100:.1f}%)")
 
 
+def analyze_by_problem_size(results: List[Dict]):
+    """
+    按问题规模(n, m)分组分析：
+    1. 每种方法在不同情况下（同一个m和n下）得到最优解的次数和概率
+       - 对于每个实例，找出所有可行方法中目标值最大的作为"最优值"
+       - 如果两个结果的目标值误差小于1e-5，则认为是同一值
+    2. 绝对运行时间统计（平均、中位数、最小、最大）
+    """
+    methods = ['greedy', 'milp', 'brute_force', 'genetic']
+    method_names = {
+        'greedy': '贪心算法',
+        'milp': 'MILP求解器',
+        'brute_force': '暴力枚举',
+        'genetic': '遗传算法'
+    }
+    
+    # 按(n, m)分组
+    groups = defaultdict(list)
+    for result in results:
+        key = (result['n'], result['m'])
+        groups[key].append(result)
+    
+    print(f"\n{'='*80}")
+    print("按问题规模分组分析")
+    print(f"{'='*80}")
+    
+    # 对每个(n, m)组合进行分析
+    for (n, m), group_results in sorted(groups.items()):
+        print(f"\n{'='*80}")
+        print(f"问题规模: n={n}, m={m}  (共 {len(group_results)} 个实例)")
+        print(f"{'='*80}")
+        
+        # 统计每个方法得到最优解的次数
+        best_obj_counts = defaultdict(int)
+        total_valid = 0  # 有可行解的实例数
+        
+        # 统计时间信息
+        time_stats = defaultdict(list)  # 每个方法的时间列表
+        
+        for result in group_results:
+            # 找出该实例的最佳目标值（所有可行方法中的最大值）
+            best_obj_value = float('-inf')
+            best_obj_methods = []  # 可能有多个方法得到相同的最优值（误差小于1e-5）
+            
+            for method in methods:
+                obj_key = f'{method}_objective'
+                feasible_key = f'{method}_feasible'
+                if result.get(feasible_key) and result.get(obj_key) is not None:
+                    obj_val = result[obj_key]
+                    if obj_val > best_obj_value + 1e-5:
+                        # 明显更优，更新最优值
+                        best_obj_value = obj_val
+                        best_obj_methods = [method]
+                    elif abs(obj_val - best_obj_value) < 1e-5:
+                        # 误差小于1e-5，认为是同一值
+                        best_obj_methods.append(method)
+            
+            # 如果有可行解，记录得到最优解的方法
+            if best_obj_methods:
+                total_valid += 1
+                for method in best_obj_methods:
+                    best_obj_counts[method] += 1
+                
+                # 统计绝对时间信息
+                for method in methods:
+                    time_key = f'{method}_time'
+                    feasible_key = f'{method}_feasible'
+                    if result.get(feasible_key) and result.get(time_key) is not None:
+                        time_val = result[time_key]
+                        time_stats[method].append(time_val)
+        
+        # 1. 打印最优解统计（优化排版）
+        print(f"\n{'─'*80}")
+        print(f"{'方法':<15} {'得到最优解次数':<18} {'概率':<12} {'百分比':<10}")
+        print(f"{'─'*80}")
+        
+        if total_valid > 0:
+            for method in methods:
+                count = best_obj_counts[method]
+                prob = count / total_valid
+                print(f"{method_names[method]:<15} {count:<18} {prob:<12.4f} {prob*100:>6.2f}%")
+        else:
+            print("  无有效实例")
+        
+        # 2. 打印绝对运行时间统计（优化排版）
+        print(f"\n{'─'*80}")
+        print(f"{'方法':<15} {'平均时间':<18} {'中位数时间':<18} {'最小时间':<18} {'最大时间':<18}")
+        print(f"{'─'*80}")
+        
+        for method in methods:
+            if time_stats[method]:
+                times = time_stats[method]
+                avg_time = sum(times) / len(times)
+                sorted_times = sorted(times)
+                median_time = sorted_times[len(sorted_times) // 2]
+                min_time = min(times)
+                max_time = max(times)
+                print(f"{method_names[method]:<15} {format_time(avg_time):<18} "
+                      f"{format_time(median_time):<18} {format_time(min_time):<18} "
+                      f"{format_time(max_time):<18}")
+            else:
+                print(f"{method_names[method]:<15} {'N/A':<18} {'N/A':<18} {'N/A':<18} {'N/A':<18}")
+    
+    # 总体统计（跨所有规模）
+    print(f"\n{'='*80}")
+    print("总体统计（跨所有问题规模）")
+    print(f"{'='*80}")
+    
+    # 总体最优解概率
+    total_best_obj_counts = defaultdict(int)
+    total_valid_all = 0
+    
+    # 总体时间统计
+    all_time_stats = defaultdict(list)
+    
+    for result in results:
+        best_obj_value = float('-inf')
+        best_obj_methods = []
+        
+        for method in methods:
+            obj_key = f'{method}_objective'
+            feasible_key = f'{method}_feasible'
+            if result.get(feasible_key) and result.get(obj_key) is not None:
+                obj_val = result[obj_key]
+                if obj_val > best_obj_value + 1e-5:
+                    best_obj_value = obj_val
+                    best_obj_methods = [method]
+                elif abs(obj_val - best_obj_value) < 1e-5:
+                    best_obj_methods.append(method)
+        
+        if best_obj_methods:
+            total_valid_all += 1
+            for method in best_obj_methods:
+                total_best_obj_counts[method] += 1
+        
+        # 统计绝对时间
+        for method in methods:
+            time_key = f'{method}_time'
+            feasible_key = f'{method}_feasible'
+            if result.get(feasible_key) and result.get(time_key) is not None:
+                all_time_stats[method].append(result[time_key])
+    
+    print(f"\n{'─'*80}")
+    print(f"{'方法':<15} {'得到最优解次数':<18} {'概率':<12} {'百分比':<10}")
+    print(f"{'─'*80}")
+    
+    if total_valid_all > 0:
+        for method in methods:
+            count = total_best_obj_counts[method]
+            prob = count / total_valid_all
+            print(f"{method_names[method]:<15} {count:<18} {prob:<12.4f} {prob*100:>6.2f}%")
+    else:
+        print("  无有效实例")
+    
+    # 总体绝对时间统计
+    print(f"\n{'─'*80}")
+    print(f"{'方法':<15} {'平均时间':<18} {'中位数时间':<18} {'最小时间':<18} {'最大时间':<18}")
+    print(f"{'─'*80}")
+    
+    for method in methods:
+        if all_time_stats[method]:
+            times = all_time_stats[method]
+            avg_time = sum(times) / len(times)
+            sorted_times = sorted(times)
+            median_time = sorted_times[len(sorted_times) // 2]
+            min_time = min(times)
+            max_time = max(times)
+            print(f"{method_names[method]:<15} {format_time(avg_time):<18} "
+                  f"{format_time(median_time):<18} {format_time(min_time):<18} "
+                  f"{format_time(max_time):<18}")
+        else:
+            print(f"{method_names[method]:<15} {'N/A':<18} {'N/A':<18} {'N/A':<18} {'N/A':<18}")
+
+
 def compare_methods(results: List[Dict], method1: str, method2: str):
     """对比两个方法"""
     method_names = {
@@ -275,6 +450,8 @@ def main():
                        choices=['greedy', 'milp', 'brute_force', 'genetic'],
                        help='对比两个方法（如: --compare greedy milp）')
     parser.add_argument('--brief', action='store_true', help='简要模式（不显示每个问题的详细信息）')
+    parser.add_argument('--by-size', action='store_true', 
+                       help='按问题规模(n,m)分组分析最优解概率和时间比率')
     
     args = parser.parse_args()
     
@@ -304,6 +481,11 @@ def main():
     # 如果指定了对比，进行方法对比
     if args.compare:
         compare_methods(results, args.compare[0], args.compare[1])
+        return
+    
+    # 如果指定了按规模分组分析
+    if args.by_size:
+        analyze_by_problem_size(results)
         return
     
     # 默认：分析所有问题
