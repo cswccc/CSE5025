@@ -54,8 +54,8 @@ class GreedySolver(BaseSolver):
         
         # 初始化决策变量
         z = np.zeros(self.m, dtype=int)  # 建设决策，初始全为0
-        x = np.zeros(self.m, dtype=float)  # 充电桩数量，初始全为0
-        y = np.zeros((self.n, self.m), dtype=float)  # 用户分配，初始全为0
+        x = np.zeros(self.m, dtype=int)  # 充电桩数量，初始全为0（整数）
+        y = np.zeros((self.n, self.m), dtype=int)  # 用户分配，初始全为0（整数）
         
         # 步骤1: 计算每个区域的潜在收益
         # 潜在收益 = 平均单位收益 × min(覆盖楼栋的总需求, 区域容量上限)
@@ -137,7 +137,7 @@ class GreedySolver(BaseSolver):
         # remaining_demand[i]: 楼栋i还未被分配的用户数
         remaining_demand = self.D - np.sum(y, axis=1)
         # remaining_capacity[j]: 区域j还能服务的用户数
-        remaining_capacity = np.zeros(self.m, dtype=float)
+        remaining_capacity = np.zeros(self.m, dtype=int)
         for j in range(self.m):
             if z[j] == 1:  # 只考虑已建设的区域
                 remaining_capacity[j] = self.U[j] - np.sum(y[:, j])

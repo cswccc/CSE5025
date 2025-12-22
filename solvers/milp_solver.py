@@ -9,8 +9,8 @@
     
     模型特点：
     - z_j: 二进制变量（0-1变量），表示是否在区域j建设
-    - x_j: 连续变量，表示区域j的充电桩数量
-    - y_ij: 连续变量，表示楼栋i分配到区域j的用户数
+    - x_j: 整数变量，表示区域j的充电桩数量
+    - y_ij: 整数变量，表示楼栋i分配到区域j的用户数
     
 优点：
     - 保证找到全局最优解
@@ -22,7 +22,7 @@
     - 需要安装PuLP库和底层求解器（如CBC）
 
 依赖：
-    - PuLP: Python线性规划库
+    - PuLP: Python混合整数规划库
     - CBC: 开源混合整数规划求解器（通过PuLP调用）
 """
 
@@ -71,7 +71,7 @@ class MILPSolver(BaseSolver):
         
         算法流程：
         1. 创建MILP问题模型
-        2. 定义决策变量（z: 二进制，x和y: 连续）
+        2. 定义决策变量（z: 二进制，x和y: 整数）
         3. 设置目标函数和约束条件
         4. 调用求解器求解
         5. 提取并返回解
@@ -94,13 +94,13 @@ class MILPSolver(BaseSolver):
         # z_j: 二进制变量，表示是否在区域j建设（0或1）
         z = [pulp.LpVariable(f'z_{j}', cat='Binary') for j in range(self.m)]
         
-        # x_j: 连续变量，表示区域j的充电桩数量，范围[0, U_j]
+        # x_j: 整数变量，表示区域j的充电桩数量，范围[0, U_j]
         # 注意：实际约束 x_j ≤ U_j * z_j 在后面添加
-        x = [pulp.LpVariable(f'x_{j}', lowBound=0, upBound=self.U[j], cat='Continuous') 
+        x = [pulp.LpVariable(f'x_{j}', lowBound=0, upBound=self.U[j], cat='Integer') 
              for j in range(self.m)]
         
-        # y_ij: 连续变量，表示楼栋i分配到区域j的用户数，非负
-        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Continuous') 
+        # y_ij: 整数变量，表示楼栋i分配到区域j的用户数，非负
+        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Integer') 
               for j in range(self.m)] for i in range(self.n)]
         
         # 步骤2: 设置目标函数
@@ -147,16 +147,13 @@ class MILPSolver(BaseSolver):
             
             prob.solve(solver)
             
-            # 提取解
-            z_sol = np.array([pulp.value(z[j]) for j in range(self.m)])
-            x_sol = np.array([pulp.value(x[j]) for j in range(self.m)])
-            y_sol = np.array([[pulp.value(y[i][j]) for j in range(self.m)] 
-                             for i in range(self.n)])
-            
-            # 处理None值
-            z_sol = np.nan_to_num(z_sol, nan=0)
-            x_sol = np.nan_to_num(x_sol, nan=0)
-            y_sol = np.nan_to_num(y_sol, nan=0)
+            # 提取解并转换为整数
+            z_sol = np.array([int(pulp.value(z[j])) if pulp.value(z[j]) is not None else 0 
+                             for j in range(self.m)], dtype=int)
+            x_sol = np.array([int(round(pulp.value(x[j]))) if pulp.value(x[j]) is not None else 0 
+                             for j in range(self.m)], dtype=int)
+            y_sol = np.array([[int(round(pulp.value(y[i][j]))) if pulp.value(y[i][j]) is not None else 0 
+                              for j in range(self.m)] for i in range(self.n)], dtype=int)
             
             objective_value = pulp.value(prob.objective)
             if objective_value is None:
@@ -164,10 +161,10 @@ class MILPSolver(BaseSolver):
             
         except Exception as e:
             print(f"MILP求解失败: {e}")
-            # 返回零解
-            z_sol = np.zeros(self.m)
-            x_sol = np.zeros(self.m)
-            y_sol = np.zeros((self.n, self.m))
+            # 返回零解（整数）
+            z_sol = np.zeros(self.m, dtype=int)
+            x_sol = np.zeros(self.m, dtype=int)
+            y_sol = np.zeros((self.n, self.m), dtype=int)
             objective_value = 0.0
         
         self.solve_time = time.time() - start_time

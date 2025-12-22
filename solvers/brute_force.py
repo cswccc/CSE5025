@@ -5,9 +5,9 @@
 
 算法思想：
     暴力枚举法通过枚举所有可能的建设决策组合来找到全局最优解。
-    对于每种建设方案，使用线性规划求解最优的用户分配。
+    对于每种建设方案，使用混合整数规划（MIP）求解最优的用户分配。
     
-    时间复杂度：O(2^m × LP_time)，其中m是区域数量
+    时间复杂度：O(2^m × MIP_time)，其中m是区域数量
     
 优点：
     - 保证找到全局最优解（对于枚举的范围内）
@@ -44,7 +44,7 @@ class BruteForceSolver(BaseSolver):
         
         算法流程：
         1. 枚举所有可能的建设决策z（共2^m种组合）
-        2. 对每种z，使用线性规划求解最优的x和y
+        2. 对每种z，使用混合整数规划（MIP）求解最优的x和y
         3. 计算每种方案的目标函数值
         4. 返回目标函数值最大的解
         
@@ -100,7 +100,7 @@ class BruteForceSolver(BaseSolver):
             if idx % 100 == 0:
                 print(f"进度: {idx}/{total_combinations}, 当前最优: {best_obj:.2f}")
             
-            # 对当前的z，求解最优的x和y（使用线性规划或贪心方法）
+            # 对当前的z，求解最优的x和y（使用混合整数规划或贪心方法）
             x, y, obj = self._solve_given_z(z)
             
             # 更新最佳解
@@ -124,7 +124,7 @@ class BruteForceSolver(BaseSolver):
         """
         在给定建设决策z的情况下，求解最优的x和y
         
-        这是一个线性规划子问题。给定z后，需要确定x和y以最大化目标函数。
+        这是一个混合整数规划（MIP）子问题。给定z后，需要确定x和y以最大化目标函数。
         子问题的目标函数：max Σ_i Σ_j (p_i * y_ij) - Σ_j (c_j * z_j)
         由于z是给定的，第二项是常数，因此只需最大化第一项。
         
@@ -133,15 +133,15 @@ class BruteForceSolver(BaseSolver):
             
         Returns:
             Tuple[np.ndarray, np.ndarray, float]:
-                - x: 最优充电桩数量数组
-                - y: 最优用户分配矩阵
+                - x: 最优充电桩数量数组（整数）
+                - y: 最优用户分配矩阵（整数）
                 - objective: 目标函数值（包含常数项c_j*z_j）
                 
         注意：
-            - 优先使用线性规划求解（精确方法）
+            - 优先使用混合整数规划（MIP）求解（精确方法）
             - 如果PuLP不可用，则使用贪心方法（近似方法）
         """
-        # 尝试使用线性规划求解（如果可用）
+        # 尝试使用混合整数规划求解（如果可用）
         try:
             import pulp
             return self._solve_given_z_lp(z)
@@ -151,15 +151,16 @@ class BruteForceSolver(BaseSolver):
     
     def _solve_given_z_lp(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        使用线性规划求解给定z的最优x和y（精确方法）
+        使用混合整数规划（MIP）求解给定z的最优x和y（精确方法）
         
-        将子问题建模为线性规划问题：
+        将子问题建模为混合整数规划问题：
         目标：max Σ_i Σ_j (p_i * y_ij)
         约束：
             - y_ij ≤ D_i * a_ij * z_j  (覆盖关系)
             - Σ_j y_ij ≤ D_i           (需求约束)
             - Σ_i y_ij ≤ x_j           (容量约束)
             - 0 ≤ x_j ≤ U_j * z_j      (容量上限)
+            - x_j, y_ij 为整数
         
         Args:
             z: 建设决策数组，形状为(m,)
@@ -169,15 +170,15 @@ class BruteForceSolver(BaseSolver):
         """
         import pulp
         
-        # 创建线性规划问题（最大化问题）
+        # 创建混合整数规划问题（最大化问题）
         prob = pulp.LpProblem("SubProblem", pulp.LpMaximize)
         
         # 定义决策变量
-        # x_j: 区域j的充电桩数量，范围[0, U_j*z_j]
-        x = [pulp.LpVariable(f'x_{j}', lowBound=0, upBound=self.U[j] * z[j], cat='Continuous')
+        # x_j: 区域j的充电桩数量（整数），范围[0, U_j*z_j]
+        x = [pulp.LpVariable(f'x_{j}', lowBound=0, upBound=self.U[j] * z[j], cat='Integer')
              for j in range(self.m)]
-        # y_ij: 楼栋i分配到区域j的用户数，非负
-        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Continuous')
+        # y_ij: 楼栋i分配到区域j的用户数（整数），非负
+        y = [[pulp.LpVariable(f'y_{i}_{j}', lowBound=0, cat='Integer')
               for j in range(self.m)] for i in range(self.n)]
         
         # 目标函数: max Σ_i Σ_j (p_i * y_ij)
@@ -207,15 +208,15 @@ class BruteForceSolver(BaseSolver):
         # 约束4: 容量上限约束 x_j ≤ U_j * z_j
         # 已在变量定义中通过upBound处理
         
-        # 使用CBC求解器求解
+        # 使用CBC求解器求解混合整数规划
         solver = pulp.PULP_CBC_CMD(msg=0)  # msg=0表示不输出求解过程
         prob.solve(solver)
         
-        # 提取解（处理可能的None值）
-        x_sol = np.array([pulp.value(x[j]) if pulp.value(x[j]) is not None else 0.0
-                         for j in range(self.m)])
-        y_sol = np.array([[pulp.value(y[i][j]) if pulp.value(y[i][j]) is not None else 0.0
-                          for j in range(self.m)] for i in range(self.n)])
+        # 提取解（处理可能的None值，并转换为整数）
+        x_sol = np.array([int(round(pulp.value(x[j]))) if pulp.value(x[j]) is not None else 0
+                         for j in range(self.m)], dtype=int)
+        y_sol = np.array([[int(round(pulp.value(y[i][j]))) if pulp.value(y[i][j]) is not None else 0
+                          for j in range(self.m)] for i in range(self.n)], dtype=int)
         
         # 计算完整的目标函数值（包括成本项）
         objective = self.calculate_objective(z, x_sol, y_sol)
@@ -239,8 +240,8 @@ class BruteForceSolver(BaseSolver):
             此方法不能保证找到最优解，建议安装PuLP以获得精确结果。
         """
         # 对于给定的z，我们需要决定x和y
-        x = np.zeros(self.m, dtype=float)
-        y = np.zeros((self.n, self.m), dtype=float)
+        x = np.zeros(self.m, dtype=int)
+        y = np.zeros((self.n, self.m), dtype=int)
         
         # 计算每个(楼栋i, 区域j)对的单位收益
         profit_matrix = np.zeros((self.n, self.m))
@@ -260,7 +261,7 @@ class BruteForceSolver(BaseSolver):
         
         # 跟踪剩余需求和剩余容量
         remaining_demand = self.D.copy()
-        remaining_capacity = np.zeros(self.m, dtype=float)
+        remaining_capacity = np.zeros(self.m, dtype=int)
         
         for j in range(self.m):
             if z[j] == 1:
