@@ -32,7 +32,8 @@ ENV/
 *.swo
 *~
 
-# 数据文件（单个测试实例，批量测试实例保留）
+# 数据文件（只忽略单个临时测试实例）
+# 注意：instances/ 和 batch_test_results.csv 已包含在版本控制中，不应忽略
 instance.json
 test_instance.json
 results.json
