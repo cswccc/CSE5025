@@ -89,6 +89,7 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             results['greedy_feasible'] = is_feasible
             results['greedy_z_count'] = sum(solution['z'])
             results['greedy_x_total'] = sum(solution['x'])
+            print(f"  [{problem_id}] 贪心算法完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
         except Exception as e:
             print(f"  [{problem_id}] 贪心算法失败: {e}")
             results['greedy_objective'] = None
@@ -113,6 +114,7 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             results['milp_feasible'] = is_feasible
             results['milp_z_count'] = sum(solution['z'])
             results['milp_x_total'] = sum(solution['x'])
+            print(f"  [{problem_id}] MILP求解器完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
         except Exception as e:
             print(f"  [{problem_id}] MILP求解器失败: {e}")
             results['milp_objective'] = None
@@ -137,6 +139,7 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             results['brute_force_feasible'] = is_feasible
             results['brute_force_z_count'] = sum(solution['z'])
             results['brute_force_x_total'] = sum(solution['x'])
+            print(f"  [{problem_id}] 暴力枚举法完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
         except Exception as e:
             print(f"  [{problem_id}] 暴力枚举法失败: {e}")
             results['brute_force_objective'] = None
@@ -170,6 +173,7 @@ def test_one_instance(instance: Dict, methods: List[str]) -> Dict:
             results['ant_colony_feasible'] = is_feasible
             results['ant_colony_z_count'] = sum(solution['z'])
             results['ant_colony_x_total'] = sum(solution['x'])
+            print(f"  [{problem_id}] 蚁群算法完成: 目标值={objective:.2f}, 时间={elapsed_time:.4f}秒, 可行={'✓' if is_feasible else '✗'}")
         except Exception as e:
             print(f"  [{problem_id}] 蚁群算法失败: {e}")
             results['ant_colony_objective'] = None
