@@ -1,5 +1,30 @@
 """
 遗传算法求解器
+
+本模块实现了遗传算法来求解充电桩覆盖收益最大化问题。
+
+算法思想：
+    遗传算法是一种模拟自然选择和遗传机制的元启发式优化算法。
+    通过选择、交叉、变异等操作，在解空间中搜索最优解。
+    
+    算法流程：
+    1. 初始化：生成初始种群（随机生成多个建设决策z）
+    2. 评估：计算每个个体的适应度（目标函数值）
+    3. 选择：根据适应度选择父代个体（轮盘赌选择）
+    4. 交叉：父代个体交叉产生子代（单点交叉）
+    5. 变异：子代个体以一定概率变异（位翻转）
+    6. 精英保留：保留最优的个体到下一代
+    7. 重复步骤2-6直到达到最大代数
+    
+优点：
+    - 可以跳出局部最优
+    - 适合大规模问题
+    - 参数可调，适应性强
+    
+缺点：
+    - 不能保证最优解
+    - 参数需要调优
+    - 可能需要较多迭代次数
 """
 
 import numpy as np
@@ -10,7 +35,12 @@ from .base_solver import BaseSolver
 
 
 class GeneticAlgorithmSolver(BaseSolver):
-    """遗传算法求解器"""
+    """
+    遗传算法求解器
+    
+    使用遗传算法的选择、交叉、变异操作来搜索最优解。
+    个体编码：只编码建设决策z（二进制串），x和y通过贪心分配得到。
+    """
     
     def __init__(self, instance: Dict, 
                  pop_size: int = 50,
@@ -40,46 +70,61 @@ class GeneticAlgorithmSolver(BaseSolver):
         """
         使用遗传算法求解
         
+        算法主循环：
+        1. 初始化种群
+        2. 对每一代：
+           a. 评估所有个体的适应度
+           b. 选择父代个体
+           c. 交叉产生子代
+           d. 变异子代
+           e. 精英保留
+           f. 更新种群
+        
         Returns:
-            (solution, objective_value)
+            Tuple[Dict, float]: 最佳解和目标函数值
         """
         start_time = time.time()
         
-        # 初始化种群（只编码z变量，x和y通过贪心分配得到）
+        # 步骤1: 初始化种群（每个个体是一个建设决策z的编码）
         population = self._initialize_population()
         
+        # 记录全局最佳个体
         best_individual = None
         best_fitness = float('-inf')
         
+        # 步骤2: 主循环（进化过程）
         for generation in range(self.max_generations):
-            # 评估适应度
+            # 步骤2a: 评估适应度（目标函数值）
             fitness_scores = []
             for individual in population:
-                z = individual
+                z = individual  # 个体就是建设决策z
+                # 解码：根据z计算x和y，并得到目标函数值
                 x, y, obj = self._decode_individual(z)
                 fitness_scores.append(obj)
                 
+                # 更新全局最佳
                 if obj > best_fitness:
                     best_fitness = obj
                     best_individual = z.copy()
             
-            # 选择
+            # 步骤2b: 选择（根据适应度选择父代）
             selected = self._select(population, fitness_scores)
             
-            # 交叉
+            # 步骤2c: 交叉（父代交叉产生子代）
             offspring = self._crossover(selected)
             
-            # 变异
+            # 步骤2d: 变异（子代以一定概率变异）
             offspring = self._mutate(offspring)
             
-            # 精英保留
+            # 步骤2e: 精英保留（保留最优的个体直接进入下一代）
             elite_count = int(self.pop_size * self.elite_rate)
-            elite_indices = np.argsort(fitness_scores)[-elite_count:]
+            elite_indices = np.argsort(fitness_scores)[-elite_count:]  # 适应度最高的elite_count个
             elite = [population[i].copy() for i in elite_indices]
             
-            # 更新种群
+            # 步骤2f: 更新种群（精英 + 子代）
             population = elite + offspring[:self.pop_size - elite_count]
             
+            # 每10代输出一次进度
             if generation % 10 == 0:
                 print(f"代 {generation}: 最佳适应度 = {best_fitness:.2f}")
         
@@ -108,8 +153,16 @@ class GeneticAlgorithmSolver(BaseSolver):
     
     def _decode_individual(self, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
         """
-        解码个体（将z转换为完整的解）
-        使用贪心方法分配用户
+        解码个体（将建设决策z转换为完整的解）
+        
+        给定建设决策z，使用贪心方法分配用户，得到x和y，并计算目标函数值。
+        这是遗传算法中的适应度评估过程。
+        
+        Args:
+            z: 建设决策数组，形状为(m,)，个体的编码
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray, float]: x, y和目标函数值
         """
         x = np.zeros(self.m, dtype=float)
         y = np.zeros((self.n, self.m), dtype=float)
@@ -147,16 +200,29 @@ class GeneticAlgorithmSolver(BaseSolver):
         return x, y, objective
     
     def _select(self, population: List[np.ndarray], fitness: List[float]) -> List[np.ndarray]:
-        """选择操作（轮盘赌选择）"""
+        """
+        选择操作（轮盘赌选择）
+        
+        根据适应度值计算选择概率，适应度越高被选中的概率越大。
+        使用轮盘赌选择方法选择父代个体。
+        
+        Args:
+            population: 当前种群
+            fitness: 每个个体的适应度值列表
+            
+        Returns:
+            List[np.ndarray]: 选择出的父代个体列表
+        """
         fitness_array = np.array(fitness)
-        # 处理负值
+        # 处理负值：如果适应度有负值，将所有值平移到正数区间
         min_fitness = np.min(fitness_array)
         if min_fitness < 0:
             fitness_array = fitness_array - min_fitness + 1
         
-        # 计算选择概率
+        # 计算选择概率（归一化）
         prob = fitness_array / np.sum(fitness_array)
         
+        # 根据概率选择pop_size个个体
         selected = []
         for _ in range(self.pop_size):
             idx = np.random.choice(len(population), p=prob)
@@ -165,30 +231,59 @@ class GeneticAlgorithmSolver(BaseSolver):
         return selected
     
     def _crossover(self, population: List[np.ndarray]) -> List[np.ndarray]:
-        """交叉操作（单点交叉）"""
+        """
+        交叉操作（单点交叉）
+        
+        将种群中的个体两两配对，以crossover_rate的概率进行交叉。
+        交叉方式：随机选择交叉点，交换交叉点后的基因片段。
+        
+        Args:
+            population: 父代种群
+            
+        Returns:
+            List[np.ndarray]: 子代个体列表
+        """
         offspring = []
+        # 两两配对
         for i in range(0, len(population) - 1, 2):
             parent1 = population[i]
             parent2 = population[i + 1]
             
+            # 以crossover_rate的概率进行交叉
             if random.random() < self.crossover_rate:
-                # 单点交叉
+                # 单点交叉：随机选择交叉点
                 crossover_point = random.randint(1, self.m - 1)
+                # 子代1：父代1的前半部分 + 父代2的后半部分
                 child1 = np.concatenate([parent1[:crossover_point], parent2[crossover_point:]])
+                # 子代2：父代2的前半部分 + 父代1的后半部分
                 child2 = np.concatenate([parent2[:crossover_point], parent1[crossover_point:]])
                 offspring.extend([child1, child2])
             else:
+                # 不交叉，直接复制父代
                 offspring.extend([parent1.copy(), parent2.copy()])
         
         return offspring
     
     def _mutate(self, population: List[np.ndarray]) -> List[np.ndarray]:
-        """变异操作（位翻转）"""
+        """
+        变异操作（位翻转）
+        
+        对种群中的每个个体，以mutation_rate的概率对每个基因位进行变异。
+        变异方式：将0变为1，或将1变为0（位翻转）。
+        
+        Args:
+            population: 种群个体列表
+            
+        Returns:
+            List[np.ndarray]: 变异后的种群
+        """
         mutated = []
         for individual in population:
             new_individual = individual.copy()
+            # 对每个基因位，以mutation_rate的概率进行变异
             for j in range(self.m):
                 if random.random() < self.mutation_rate:
+                    # 位翻转：0变1，1变0
                     new_individual[j] = 1 - new_individual[j]
             mutated.append(new_individual)
         return mutated

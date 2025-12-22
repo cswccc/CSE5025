@@ -1,5 +1,29 @@
 """
 蚁群算法求解器
+
+本模块实现了蚁群算法（Ant Colony Optimization, ACO）来求解充电桩覆盖收益最大化问题。
+
+算法思想：
+    蚁群算法模拟蚂蚁觅食行为，通过信息素机制来引导搜索。
+    算法流程：
+    1. 初始化信息素和启发式信息
+    2. 每只蚂蚁根据信息素和启发式信息构建解
+    3. 根据解的质量更新信息素
+    4. 信息素挥发
+    5. 重复步骤2-4直到达到最大迭代次数
+    
+    选择概率：P_j = (τ_j^α * η_j^β) / Σ(τ_k^α * η_k^β)
+    其中：τ_j是信息素，η_j是启发式信息，α和β是权重参数
+    
+优点：
+    - 具有良好的全局搜索能力
+    - 适合组合优化问题
+    - 信息素机制有助于避免过早收敛
+    
+缺点：
+    - 收敛速度可能较慢
+    - 参数敏感，需要调优
+    - 需要多次迭代才能找到好解
 """
 
 import numpy as np
@@ -10,7 +34,12 @@ from .base_solver import BaseSolver
 
 
 class AntColonySolver(BaseSolver):
-    """蚁群算法求解器"""
+    """
+    蚁群算法求解器
+    
+    使用信息素和启发式信息引导蚂蚁构建解，通过信息素更新机制
+    来学习最优解的构建模式。
+    """
     
     def __init__(self, instance: Dict,
                  num_ants: int = 20,
@@ -182,22 +211,41 @@ class AntColonySolver(BaseSolver):
     
     def _update_pheromone(self, solutions: List[np.ndarray], objectives: List[float],
                          best_solution: np.ndarray, best_objective: float):
-        """更新信息素"""
-        # 信息素挥发
+        """
+        更新信息素
+        
+        信息素更新规则：
+        1. 信息素挥发：τ_j = (1 - ρ) * τ_j
+        2. 信息素增强：根据解的质量增强被选择的区域的信息素
+        3. 最佳解额外增强：对全局最佳解中的区域额外增强信息素
+        4. 信息素上下界限制：防止信息素过小或过大
+        
+        Args:
+            solutions: 所有蚂蚁构建的解列表
+            objectives: 对应的目标函数值列表
+            best_solution: 全局最佳解
+            best_objective: 全局最佳目标函数值
+        """
+        # 步骤1: 信息素挥发（模拟信息素的自然挥发）
+        # 挥发系数rho控制信息素的持久性，rho越大挥发越快
         self.pheromone = (1 - self.rho) * self.pheromone
         
-        # 根据解的优劣更新信息素
+        # 步骤2: 根据解的优劣更新信息素（正反馈机制）
+        # 解的质量越好，增强的信息素越多
         for z, obj in zip(solutions, objectives):
             if obj > 0:
                 for j in range(self.m):
-                    if z[j] == 1:
+                    if z[j] == 1:  # 如果区域j被选择
+                        # 增强量与解的质量成正比
                         self.pheromone[j] += self.q * obj / best_objective if best_objective > 0 else 0
         
-        # 最佳解额外增强
+        # 步骤3: 最佳解额外增强（强化学习）
+        # 对全局最佳解中的区域进行额外增强，加速收敛到最优解
         if best_objective > 0:
             for j in range(self.m):
                 if best_solution[j] == 1:
-                    self.pheromone[j] += self.q * 2.0
+                    self.pheromone[j] += self.q * 2.0  # 额外增强系数为2.0
         
-        # 信息素上下界
+        # 步骤4: 信息素上下界限制
+        # 防止信息素过小（导致探索不足）或过大（导致过早收敛）
         self.pheromone = np.clip(self.pheromone, 0.01, 10.0)

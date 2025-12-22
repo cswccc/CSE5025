@@ -1,6 +1,31 @@
 """
 神经网络方法求解器
-使用强化学习方法训练策略网络
+
+本模块使用深度强化学习方法（策略梯度）来求解充电桩覆盖收益最大化问题。
+
+算法思想：
+    使用神经网络学习区域选择的策略，通过策略梯度方法训练网络。
+    网络输入：区域特征（成本、容量、覆盖楼栋数、平均收益）
+    网络输出：选择该区域的概率
+    
+    训练过程：
+    1. 提取区域特征
+    2. 网络输出选择概率
+    3. 根据概率采样决策
+    4. 计算奖励（目标函数值）
+    5. 使用策略梯度更新网络参数
+    6. 重复步骤2-5直到训练完成
+    
+优点：
+    - 可以学习复杂的选择模式
+    - 适合处理大规模问题
+    - 训练后生成解的速度快
+    
+缺点：
+    - 需要训练时间
+    - 不能保证最优解
+    - 需要安装PyTorch
+    - 参数需要调优
 """
 
 import numpy as np
@@ -19,25 +44,53 @@ except ImportError:
 
 
 class PolicyNetwork(nn.Module):
-    """策略网络"""
+    """
+    策略网络
+    
+    输入区域特征，输出选择该区域的概率。
+    网络结构：全连接神经网络，包含两个隐藏层。
+    """
     
     def __init__(self, input_dim: int, hidden_dim: int = 64, output_dim: int = 1):
+        """
+        初始化策略网络
+        
+        Args:
+            input_dim: 输入特征维度（4维：成本、容量、覆盖楼栋数、平均收益）
+            hidden_dim: 隐藏层维度
+            output_dim: 输出维度（1维：选择概率）
+        """
         super(PolicyNetwork, self).__init__()
+        # 定义网络结构：输入层 -> 隐藏层1 -> 隐藏层2 -> 输出层
         self.network = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim),
-            nn.Sigmoid()
+            nn.Linear(input_dim, hidden_dim),  # 全连接层1
+            nn.ReLU(),                          # ReLU激活函数
+            nn.Linear(hidden_dim, hidden_dim),  # 全连接层2
+            nn.ReLU(),                          # ReLU激活函数
+            nn.Linear(hidden_dim, output_dim),  # 输出层
+            nn.Sigmoid()                        # Sigmoid激活，输出概率[0,1]
         )
     
     def forward(self, x):
+        """
+        前向传播
+        
+        Args:
+            x: 输入特征，形状为(batch_size, input_dim)
+            
+        Returns:
+            Tensor: 输出概率，形状为(batch_size, output_dim)
+        """
         return self.network(x)
 
 
 class NeuralNetworkSolver(BaseSolver):
-    """神经网络求解器（使用策略梯度方法）"""
+    """
+    神经网络求解器（使用策略梯度方法）
+    
+    使用深度神经网络学习区域选择策略，通过策略梯度方法训练网络。
+    训练完成后，使用网络生成解。
+    """
     
     def __init__(self, instance: Dict,
                  hidden_dim: int = 64,
@@ -101,25 +154,48 @@ class NeuralNetworkSolver(BaseSolver):
         return self.best_solution, self.best_objective
     
     def _extract_features(self) -> np.ndarray:
-        """提取区域特征"""
+        """
+        提取区域特征
+        
+        为每个区域提取4维特征向量：
+        1. 成本（归一化）
+        2. 容量上限（归一化）
+        3. 覆盖楼栋数（归一化）
+        4. 覆盖楼栋的平均单位收益（归一化）
+        
+        Returns:
+            np.ndarray: 特征矩阵，形状为(m, 4)，每行是一个区域的特征向量
+        """
         features = []
         for j in range(self.m):
+            # 找出区域j能覆盖的楼栋
             covered_buildings = np.where(self.a[:, j] == 1)[0]
             num_covered = len(covered_buildings)
             avg_profit = np.mean(self.p[covered_buildings]) if num_covered > 0 else 0
             
-            # 归一化特征
-            cost_norm = self.c[j] / (np.max(self.c) + 1e-6)
-            capacity_norm = self.U[j] / (np.max(self.U) + 1e-6)
-            num_covered_norm = num_covered / (self.n + 1e-6)
-            avg_profit_norm = avg_profit / (np.max(self.p) + 1e-6)
+            # 归一化特征（缩放到[0,1]区间，便于神经网络学习）
+            cost_norm = self.c[j] / (np.max(self.c) + 1e-6)  # 成本归一化
+            capacity_norm = self.U[j] / (np.max(self.U) + 1e-6)  # 容量归一化
+            num_covered_norm = num_covered / (self.n + 1e-6)  # 覆盖楼栋数归一化
+            avg_profit_norm = avg_profit / (np.max(self.p) + 1e-6)  # 平均收益归一化
             
             features.append([cost_norm, capacity_norm, num_covered_norm, avg_profit_norm])
         
         return np.array(features, dtype=np.float32)
     
     def _train_policy(self, features: np.ndarray):
-        """训练策略网络"""
+        """
+        训练策略网络
+        
+        使用策略梯度方法训练网络。在每个episode中：
+        1. 网络输出选择概率
+        2. 根据概率采样决策
+        3. 计算奖励（目标函数值）
+        4. 使用策略梯度更新网络参数
+        
+        Args:
+            features: 区域特征矩阵，形状为(m, 4)
+        """
         features_tensor = torch.FloatTensor(features)
         
         for episode in range(self.num_episodes):
