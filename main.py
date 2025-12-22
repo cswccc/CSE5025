@@ -12,8 +12,7 @@ from solvers import (
     GreedySolver,
     MILPSolver,
     GeneticAlgorithmSolver,
-    AntColonySolver,
-    NeuralNetworkSolver
+    AntColonySolver
 )
 
 
@@ -76,8 +75,8 @@ def main():
     parser.add_argument('--generate', action='store_true', help='生成新的问题实例')
     parser.add_argument('--output', type=str, default='results.json', help='结果输出文件')
     parser.add_argument('--methods', type=str, nargs='+', 
-                       default=['greedy', 'milp', 'ga', 'aco', 'nn'],
-                       choices=['brute_force', 'greedy', 'milp', 'ga', 'aco', 'nn', 'all'],
+                       default=['greedy', 'milp', 'ga', 'aco'],
+                       choices=['brute_force', 'greedy', 'milp', 'ga', 'aco', 'all'],
                        help='要运行的求解方法')
     
     args = parser.parse_args()
@@ -105,7 +104,7 @@ def main():
     # 确定要运行的求解器
     methods = args.methods
     if 'all' in methods:
-        methods = ['brute_force', 'greedy', 'milp', 'ga', 'aco', 'nn']
+        methods = ['brute_force', 'greedy', 'milp', 'ga', 'aco']
     
     results = []
     
@@ -147,17 +146,6 @@ def main():
         )
         result = run_solver('蚁群算法', solver, instance)
         results.append(result)
-    
-    if 'nn' in methods:
-        try:
-            solver = NeuralNetworkSolver(
-                instance,
-                num_episodes=500
-            )
-            result = run_solver('神经网络方法', solver, instance)
-            results.append(result)
-        except ImportError:
-            print("\n跳过神经网络方法：PyTorch未安装")
     
     # 比较结果
     print(f"\n{'='*60}")
