@@ -37,16 +37,7 @@
 
   **1. Construction decision variables**
 
-  For each area $j \in \mathcal{J}$, define a binary decision variable
-  $$
-  z_j =
-  \begin{cases}
-  1, & \text{if a charging station is built in area } j,\\
-  0, & \text{otherwise}.
-  \end{cases}
-  $$
-
-  The variable $z_j$ indicates whether we choose to build a station in area $j$.
+  Let binary decision variable $z_j$ denote whether to build a station in area $j$. $z_j \in \{0, 1\}$.
 
   **2. Charging pile configuration variables**
 
